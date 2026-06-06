@@ -20,8 +20,12 @@ concurrency:
 jobs:
   build-image:
     # Build + push the Docker Hub image (stable + beta channel variants).
-    # Stable releases also advance :latest; pre-release tags (with a hyphen)
-    # do not. Image tags are immutable — fix-forward with a new version.
+    # Releases publish only the immutable :vX.Y.Z tag here — :latest is NOT
+    # advanced automatically. After a new image has soaked on dev for ~24-48h,
+    # run the "Promote :latest" workflow to re-tag it as :latest. This keeps
+    # image-level regressions (Chrome/Node/base-OS/bootstrap bugs) off the
+    # auto-updating user base until they've been vetted. Image tags are
+    # immutable — fix-forward with a new version.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -40,13 +44,6 @@ jobs:
             exit 1
           fi
           echo "value=$TAG" >> "$GITHUB_OUTPUT"
-          # Prerelease tags carry a hyphen (e.g. v1.2.3-beta.1). Only stable
-          # releases advance :latest.
-          if [[ "$TAG" =~ - ]]; then
-            echo "is_stable=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_stable=true" >> "$GITHUB_OUTPUT"
-          fi
           echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
@@ -74,7 +71,6 @@ jobs:
           images: gitaarik036/sjs-browser
           tags: |
             type=raw,value=${{ steps.tag.outputs.value }}
-            type=raw,value=latest,enable=${{ steps.tag.outputs.is_stable == 'true' }}
 
       - name: Build + push stable-channel image
         uses: docker/build-push-action@v6
