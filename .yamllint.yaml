@@ -1,0 +1,17 @@
+extends: default
+rules:
+  truthy:
+    check-keys: false
+  line-length:
+    max: 200
+  document-start: disable
+  indentation:
+    spaces: consistent
+    indent-sequences: consistent
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+ignore: |
+  node_modules/
+  package-lock.json
+  .git/
