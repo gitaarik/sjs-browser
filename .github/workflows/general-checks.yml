@@ -1,0 +1,78 @@
+name: General Checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  yamllint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install --quiet yamllint==1.37.1
+      - run: yamllint .
+
+  lint-git:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Check for fixup/squash commits
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin "$BASE_REF"
+          BAD=$(git log --oneline "origin/$BASE_REF..HEAD" --grep '^\(fixup\|squash\)!' || true)
+          if [ -n "$BAD" ]; then
+            printf '::error::fixup!/squash! commits found — squash them before merge:\n%s\n' "$BAD" >&2
+            exit 1
+          fi
+      - name: Check feature branch is up-to-date with base
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin "$BASE_REF"
+          BEHIND=$(git rev-list --count "HEAD..origin/$BASE_REF" || echo 0)
+          if [ "$BEHIND" -gt 0 ]; then
+            echo "::warning::Branch is $BEHIND commit(s) behind origin/$BASE_REF — consider rebasing." >&2
+          fi
+      - name: Check no merge of base into feature branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin "$BASE_REF"
+          MERGES=$(git log --oneline --merges "origin/$BASE_REF..HEAD" \
+            --grep "Merge .* into" --grep "Merge branch '$BASE_REF'" || true)
+          if [ -n "$MERGES" ]; then
+            printf '::error::Merge of %s into feature branch detected — rebase instead:\n%s\n' "$BASE_REF" "$MERGES" >&2
+            exit 1
+          fi
+
+  hadolint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          recursive: true
+          # Lenient on first adoption — fail only on hadolint errors (DL3000-tier),
+          # not on warnings/info. Tighten later by removing this line.
+          failure-threshold: error

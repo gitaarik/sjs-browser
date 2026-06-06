@@ -1,0 +1,27 @@
+# Smart Job Seeker — Watchtower auto-update overlay
+#
+# Opt-in auto-update for plain-Docker installs. NAS users (Synology,
+# TrueNAS, Unraid, QNAP) should rely on their platform's built-in
+# auto-update toggle instead — running this alongside the platform's
+# updater can cause conflicts.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.watchtower.yml up -d
+#
+# Watchtower polls Docker Hub every 6 hours for a new image digest on
+# whatever tag the tunnel container is pinned to (`:latest` by default).
+# When a new digest appears, Watchtower pulls the new image, recreates
+# the container, and removes the old image (--cleanup).
+#
+# `--label-enable` scopes Watchtower to containers that opt in via the
+# `com.centurylinklabs.watchtower.enable=true` label. The tunnel client's
+# example compose sets this label, so Watchtower will only touch our
+# container — other containers on the host are left alone.
+
+services:
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --label-enable --interval 21600 --cleanup

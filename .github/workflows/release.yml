@@ -1,0 +1,223 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to build and push (e.g., v1.0.0 or v1.0.0-citest)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-image:
+    # Build + push the Docker Hub image (stable + beta channel variants).
+    # Stable releases also advance :latest; pre-release tags (with a hyphen)
+    # do not. Image tags are immutable — fix-forward with a new version.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve image tag + flags
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-$REF_NAME}"
+          # Full-match regex: prevents newline/control-char injection into $GITHUB_OUTPUT.
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            printf 'Tag must match vX.Y.Z[-suffix] (got: %q)\n' "$TAG" >&2
+            exit 1
+          fi
+          echo "value=$TAG" >> "$GITHUB_OUTPUT"
+          # Prerelease tags carry a hyphen (e.g. v1.2.3-beta.1). Only stable
+          # releases advance :latest.
+          if [[ "$TAG" =~ - ]]; then
+            echo "is_stable=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_stable=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Refuse to overwrite existing image tag
+        env:
+          IMAGE: gitaarik036/sjs-browser:${{ steps.tag.outputs.value }}
+        run: |
+          set -euo pipefail
+          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "$IMAGE already exists on Docker Hub." >&2
+            echo "Image tags are immutable — fix-forward with a new version." >&2
+            exit 1
+          fi
+          echo "OK: $IMAGE does not exist yet."
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: gitaarik036/sjs-browser
+          tags: |
+            type=raw,value=${{ steps.tag.outputs.value }}
+            type=raw,value=latest,enable=${{ steps.tag.outputs.is_stable == 'true' }}
+
+      - name: Build + push stable-channel image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          build-args: |
+            SJS_BROWSER_BUILD_VERSION=${{ steps.tag.outputs.value }}
+            SJS_BROWSER_BUILD_DATE=${{ steps.tag.outputs.build_date }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=gitaarik036/sjs-browser:buildcache
+          cache-to: type=registry,ref=gitaarik036/sjs-browser:buildcache,mode=max
+
+      - name: Build + push beta-channel variant
+        # Same source; the build arg flips the baked default channel. The :beta
+        # tag is intentionally moving (NASes pinned to :beta auto-pull the
+        # newest pre-release), so no immutability gate. Layer cache from the
+        # stable build above keeps this near-instant.
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          build-args: |
+            SJS_BROWSER_BUILD_VERSION=${{ steps.tag.outputs.value }}
+            SJS_BROWSER_BUILD_DATE=${{ steps.tag.outputs.build_date }}
+            SJS_BROWSER_DEFAULT_CHANNEL=beta
+          tags: gitaarik036/sjs-browser:beta
+          cache-from: type=registry,ref=gitaarik036/sjs-browser:buildcache
+          cache-to: type=registry,ref=gitaarik036/sjs-browser:buildcache,mode=max
+
+  release-tarball:
+    # Build the signed release tarball and publish it as a GitHub Release on
+    # this repo. The in-image bootstrap fetches it at runtime. Runs in parallel
+    # with build-image — neither depends on the other.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve tag + flags
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_TAG:-$REF_NAME}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            printf 'Tag must match vX.Y.Z[-suffix] (got: %q)\n' "$TAG" >&2
+            exit 1
+          fi
+          echo "value=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" =~ - ]]; then
+            echo "is_stable=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_stable=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Build tarball
+        env:
+          NEW_TAG: ${{ steps.tag.outputs.value }}
+          BUILD_DATE: ${{ steps.tag.outputs.build_date }}
+        run: |
+          set -euo pipefail
+          npm install --no-audit --no-fund
+
+          cat > .build-info.json <<EOF
+          {
+            "version": "${NEW_TAG#v}",
+            "tag": "$NEW_TAG",
+            "build_date": "$BUILD_DATE",
+            "commit": "$GITHUB_SHA"
+          }
+          EOF
+
+          TARBALL="sjs-browser-${NEW_TAG}.tar.gz"
+          tar czf "$TARBALL" src package.json tsconfig.json node_modules .build-info.json
+          ls -lh "$TARBALL"
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+
+      - name: Sign tarball with minisign
+        env:
+          MINISIGN_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
+          TARBALL: ${{ env.TARBALL }}
+          NEW_TAG: ${{ steps.tag.outputs.value }}
+          BUILD_DATE: ${{ steps.tag.outputs.build_date }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq minisign
+
+          # Write the key to a temp file with 600 perms; deleted right after sign.
+          KEY_FILE=$(mktemp)
+          chmod 600 "$KEY_FILE"
+          printf '%s' "$MINISIGN_KEY" > "$KEY_FILE"
+          # Pad with a final newline if missing — minisign rejects keys without it.
+          [ "$(tail -c1 "$KEY_FILE" | wc -l)" -eq 0 ] && echo >> "$KEY_FILE"
+
+          minisign -Sm "$TARBALL" -s "$KEY_FILE" -W \
+            -t "sjs-browser $NEW_TAG $BUILD_DATE" \
+            -c "Release tarball signed at $BUILD_DATE"
+
+          rm -f "$KEY_FILE"
+
+          # Sanity check: verify against the in-tree public key. If this fails,
+          # the GH-Secrets key drifted from release.pub and every release would
+          # be rejected by the bootstrap — better to know now.
+          minisign -Vm "$TARBALL" -p release.pub
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARBALL: ${{ env.TARBALL }}
+          NEW_TAG: ${{ steps.tag.outputs.value }}
+          IS_STABLE: ${{ steps.tag.outputs.is_stable }}
+        run: |
+          set -euo pipefail
+          if [ "$IS_STABLE" = "true" ]; then
+            PRERELEASE_FLAGS=()
+            NOTES="Release tarball for sjs-browser bootstrap auto-update."
+          else
+            PRERELEASE_FLAGS=(--prerelease)
+            NOTES="Pre-release tarball for sjs-browser bootstrap (beta channel)."
+          fi
+
+          if gh release view "$NEW_TAG" >/dev/null 2>&1; then
+            gh release upload "$NEW_TAG" --clobber "$TARBALL" "$TARBALL.minisig"
+            echo "Refreshed assets on existing $NEW_TAG release"
+          else
+            gh release create "$NEW_TAG" \
+              --title "$NEW_TAG" \
+              --notes "$NOTES" \
+              "${PRERELEASE_FLAGS[@]}" \
+              "$TARBALL" "$TARBALL.minisig"
+            echo "Created new $NEW_TAG release"
+          fi

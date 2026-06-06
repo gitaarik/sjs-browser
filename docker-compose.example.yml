@@ -1,0 +1,39 @@
+# Smart Job Seeker — NAS Tunnel Client
+#
+# Copy this file to docker-compose.yml and fill in your credentials.
+#
+# Usage:
+#   docker compose up -d
+#
+# Browser control is available directly from the dashboard (no extra ports needed).
+
+services:
+  sjs-tunnel:
+    image: gitaarik036/sjs-browser:latest
+    restart: unless-stopped
+    shm_size: "512m"          # Chrome needs shared memory for rendering
+    labels:
+      # Opt-in marker for the Watchtower overlay. Harmless if Watchtower
+      # isn't running. See docker-compose.watchtower.yml.
+      - "com.centurylinklabs.watchtower.enable=true"
+    volumes:
+      - chrome_data:/data  # Persist Chrome profile (cookies, login sessions)
+    environment:
+      # Required: Your SJS server tunnel URL
+      SJS_SERVER_URL: "wss://app.smartjobseeker.com/tunnel"
+
+      # Required: API token from your SJS dashboard (Settings > Desktop App)
+      SJS_API_TOKEN: "your-api-token-here"
+
+      # Optional: Residential proxy URL
+      # SJS_PROXY_URL: "http://user:pass@proxy.example.com:8080"
+
+    # Recommended: limit resources to prevent runaway Chrome
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2"
+
+volumes:
+  chrome_data:
