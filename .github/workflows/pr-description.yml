@@ -1,0 +1,27 @@
+name: PR Description
+
+# Separate from general-checks.yml so it can re-trigger on `edited` (description
+# updates) without re-running yamllint on every label change.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-description:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check PR description is not empty
+        env:
+          # Read via env to avoid command injection from PR body content.
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          if [ -z "$(printf '%s' "$BODY" | tr -d '[:space:]')" ]; then
+            echo "::error::PR description is empty — add a summary of what changes and why." >&2
+            exit 1
+          fi
