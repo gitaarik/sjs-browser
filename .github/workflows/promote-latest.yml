@@ -70,4 +70,9 @@ jobs:
           # the identical digest.
           docker buildx imagetools create -t gitaarik036/sjs-browser:latest "$SRC"
           echo "Promoted $SRC -> :latest"
-          docker buildx imagetools inspect gitaarik036/sjs-browser:latest | head -5
+          # Informational only. `inspect | head` would SIGPIPE inspect once head
+          # closes the pipe, and under `pipefail` that fails the whole step even
+          # though the promote above already succeeded (run 29148982375). Capture
+          # first, then head — no pipe, no SIGPIPE.
+          INSPECT="$(docker buildx imagetools inspect gitaarik036/sjs-browser:latest)"
+          printf '%s\n' "$INSPECT" | head -5
