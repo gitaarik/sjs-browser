@@ -182,9 +182,9 @@ function send(msg: ClientMessage): void {
  * two `/json` fetches (one to find the page id, another to look up the WS
  * URL) on top of opening a fresh WebSocket — pure duplicate work.
  */
-async function fetchPageTarget(): Promise<{ pageId: string; webSocketDebuggerUrl: string }> {
+async function fetchPageTarget(): Promise<{ pageId: string; webSocketDebuggerUrl: string; url?: string }> {
   const targets = await new Promise<
-    Array<{ id: string; type: string; webSocketDebuggerUrl?: string }>
+    Array<{ id: string; type: string; webSocketDebuggerUrl?: string; url?: string }>
   >((resolve, reject) => {
     const req = http.get(`http://127.0.0.1:${CDP_PORT}/json`, (res) => {
       let data = "";
@@ -202,7 +202,7 @@ async function fetchPageTarget(): Promise<{ pageId: string; webSocketDebuggerUrl
   if (!page?.webSocketDebuggerUrl) {
     throw new Error("No page targets with WebSocket URL found");
   }
-  return { pageId: page.id, webSocketDebuggerUrl: page.webSocketDebuggerUrl };
+  return { pageId: page.id, webSocketDebuggerUrl: page.webSocketDebuggerUrl, url: page.url };
 }
 
 
@@ -250,6 +250,97 @@ async function cdpBrowserCall(
   });
 }
 
+type DirectPageCdpAttempt =
+  | { ok: true }
+  | { ok: false; phase: "connect" | "callback"; error: Error };
+
+/**
+ * One connect-and-run attempt against a specific page target. Resolves
+ * (never rejects) with a tagged result so the caller can decide whether the
+ * failure is retryable:
+ *   - `phase: "connect"` — the websocket never fired `open` within
+ *     connectTimeoutMs. The target was likely torn down by an in-flight
+ *     navigation; a refetch may find a live one.
+ *   - `phase: "callback"` — we connected but the CDP work stalled or threw.
+ *     Retrying against a new socket won't help.
+ */
+async function attemptDirectPageCdp(
+  label: string,
+  connectTimeoutMs: number,
+  overallTimeoutMs: number,
+  target: { pageId: string; webSocketDebuggerUrl: string; url?: string },
+  fn: (pageWs: WebSocket, nextId: () => number) => Promise<void>,
+): Promise<DirectPageCdpAttempt> {
+  const targetLabel = target.url ?? target.pageId;
+  return new Promise<DirectPageCdpAttempt>((resolve) => {
+    let phase: "connect" | "callback" = "connect";
+    let settled = false;
+    let connectTimer: ReturnType<typeof setTimeout> | undefined;
+    let overallTimer: ReturnType<typeof setTimeout> | undefined;
+    const pageWs = new WebSocket(target.webSocketDebuggerUrl);
+    let msgId = 1;
+    const nextId = () => msgId++;
+
+    const settle = (result: DirectPageCdpAttempt) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(connectTimer);
+      clearTimeout(overallTimer);
+      pageWs.close();
+      resolve(result);
+    };
+
+    // Short timer covering the connect phase only: a healthy local page target
+    // opens its WS in <1ms, so a stall here is the retryable stale-target case.
+    connectTimer = setTimeout(() => {
+      if (phase !== "connect") return;
+      settle({
+        ok: false,
+        phase: "connect",
+        // "<label>: …" shape so isAutomationErrorMessage's anchored patterns
+        // (/^clickAt:/, /^clickElement:/) classify it as a tooling error.
+        error: new Error(`${label}: timeout — websocket never opened (target ${targetLabel})`),
+      });
+    }, connectTimeoutMs);
+
+    // Overall budget for the whole attempt (connect + callback).
+    overallTimer = setTimeout(() => {
+      settle({
+        ok: false,
+        phase,
+        error: new Error(
+          `${label}: timeout — ${
+            phase === "connect" ? "websocket never opened" : "callback stalled"
+          } (target ${targetLabel})`,
+        ),
+      });
+    }, overallTimeoutMs);
+
+    pageWs.on("open", async () => {
+      phase = "callback";
+      clearTimeout(connectTimer);
+      try {
+        await fn(pageWs, nextId);
+        settle({ ok: true });
+      } catch (err) {
+        settle({
+          ok: false,
+          phase: "callback",
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    });
+
+    pageWs.on("error", (err) => {
+      settle({
+        ok: false,
+        phase,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    });
+  });
+}
+
 /**
  * Open a fresh CDP WebSocket to the active page target, run a callback,
  * and close it. Per-call (not persistent) — an earlier attempt at a
@@ -258,38 +349,53 @@ async function cdpBrowserCall(
  * close event; the readyState check still saw "OPEN" while operations
  * hung until the parent's 10s ack timer.
  *
- * The single change kept from that experiment is the consolidated
- * `fetchPageTarget()` call — one /json HTTP roundtrip returning both
- * pageId and webSocketDebuggerUrl, where the original code did two.
+ * Even a fresh per-call WS can hang: if the page navigates *while we are
+ * connecting* (Upwork's search submit fires an SPA nav that tears down the
+ * page target mid-click — run 1115), the socket never fires `open` and stalls
+ * until the timeout, surfacing as an opaque "<label> timeout" that hides which
+ * phase failed. So we split the budget: the connect phase gets its own short
+ * timeout, and if it stalls we refetch the (now-current) target and retry once.
+ * A stall or throw *after* connect is not retryable. The error message names
+ * the failed phase and target for the preview debug tool.
  */
 async function withDirectPageCdp(
   label: string,
   timeoutMs: number,
   fn: (pageWs: WebSocket, nextId: () => number) => Promise<void>,
 ): Promise<void> {
-  const { webSocketDebuggerUrl } = await fetchPageTarget();
+  const CONNECT_TIMEOUT_MS = Math.min(3000, timeoutMs);
+  const started = Date.now();
+  const maxAttempts = 2;
 
-  await new Promise<void>((resolve, reject) => {
-    const pageWs = new WebSocket(webSocketDebuggerUrl);
-    const timeout = setTimeout(() => { pageWs.close(); reject(new Error(`${label} timeout`)); }, timeoutMs);
-    let msgId = 1;
-    const nextId = () => msgId++;
-
-    pageWs.on("open", async () => {
-      try {
-        await fn(pageWs, nextId);
-        clearTimeout(timeout);
-        pageWs.close();
-        resolve();
-      } catch (err) {
-        clearTimeout(timeout);
-        pageWs.close();
-        reject(err);
-      }
-    });
-
-    pageWs.on("error", (err) => { clearTimeout(timeout); reject(err); });
-  });
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const remaining = timeoutMs - (Date.now() - started);
+    if (remaining <= 0) {
+      throw new Error(
+        `${label}: timeout — budget exhausted after ${attempt - 1} attempt(s)`,
+      );
+    }
+    const target = await fetchPageTarget();
+    const result = await attemptDirectPageCdp(
+      label,
+      Math.min(CONNECT_TIMEOUT_MS, remaining),
+      remaining,
+      target,
+      fn,
+    );
+    if (result.ok) return;
+    if (result.phase === "connect" && attempt < maxAttempts) {
+      log(
+        `${label}: websocket never opened for target ${
+          target.url ?? target.pageId
+        } within ${Math.min(CONNECT_TIMEOUT_MS, remaining)}ms — target likely churned by navigation, refetching and retrying`,
+      );
+      continue;
+    }
+    throw result.error;
+  }
+  // Loop always returns on success or throws above; this satisfies the
+  // compiler's control-flow analysis.
+  throw new Error(`${label}: timeout`);
 }
 
 // =============================================================================
