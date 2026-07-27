@@ -17,6 +17,10 @@ concurrency:
 jobs:
   commitlint:
     runs-on: ubuntu-24.04
+    # Dependabot writes "build(deps): Bump x from a to b" — capitalised, which
+    # trips subject-case. Its messages aren't ours to fix, and every other repo
+    # in the fleet skips the bot here, so match them.
+    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@v6
         with:
