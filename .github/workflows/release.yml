@@ -73,7 +73,7 @@ jobs:
             type=raw,value=${{ steps.tag.outputs.value }}
 
       - name: Build + push stable-channel image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
@@ -90,7 +90,7 @@ jobs:
         # tag is intentionally moving (NASes pinned to :beta auto-pull the
         # newest pre-release), so no immutability gate. Layer cache from the
         # stable build above keeps this near-instant.
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
