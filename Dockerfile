@@ -25,7 +25,7 @@
 # vendored chrome-common.sh shared with the cloud chrome/ dev image):
 #   docker build -t sjs-browser .
 
-FROM ubuntu:22.04
+FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:99
