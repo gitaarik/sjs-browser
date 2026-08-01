@@ -76,3 +76,41 @@ jobs:
           # Lenient on first adoption — fail only on hadolint errors (DL3000-tier),
           # not on warnings/info. Tighten later by removing this line.
           failure-threshold: error
+
+  # Moved here from sjs-ops, which had to check out every submodule to reach
+  # this Dockerfile and paid metered Actions minutes to build it — it was the
+  # single largest line item on that account. This repo is public, so the same
+  # build is free, runs on every push rather than only when the submodule
+  # pointer moves, and lives next to the file it scans.
+  dockle:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build image for scanning
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          # Don't push, just load into the local docker daemon.
+          load: true
+          # Tag is required but doesn't matter since we're not pushing.
+          tags: sjs-browser-scan:latest
+      - name: Run Dockle
+        uses: goodwithtech/dockle-action@v0.4.15
+        with:
+          image: 'sjs-browser-scan:latest'
+          format: 'list'
+          exit-code: '1'
+          # Fail only on FATAL; WARN/INFO accepted during adoption.
+          exit-level: 'fatal'
+          # CIS-DI-0001: Create a user for the container (WARN)
+          # CIS-DI-0005: Enable content trust for Docker (INFO)
+          # CIS-DI-0006: Add HEALTHCHECK instruction (INFO)
+          # CIS-DI-0010: fires on benign SJS_BROWSER_* build args, not secrets.
+          ignore: 'CIS-DI-0001,CIS-DI-0005,CIS-DI-0006,CIS-DI-0010'
+      - name: Run dive
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -e CI=true \
+            wagoodman/dive:v0.13.1 sjs-browser-scan:latest
