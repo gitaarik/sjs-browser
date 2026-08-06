@@ -66,7 +66,7 @@ jobs:
           echo "OK: $IMAGE does not exist yet."
 
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: gitaarik036/sjs-browser
           tags: |
