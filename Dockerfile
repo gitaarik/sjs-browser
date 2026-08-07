@@ -84,16 +84,54 @@ RUN MINISIGN_ARCH=$(case "$TARGETARCH" in amd64) echo x86_64;; arm64) echo aarch
     && install -m 0755 "/tmp/minisign-linux/${MINISIGN_ARCH}/minisign" /usr/local/bin/minisign \
     && rm -rf /tmp/minisign-linux
 
-# Install Google Chrome stable. The key fetch and the dearmor are kept out of a
-# pipe on purpose: piped into gpg, a 403 on the key URL is masked by gpg's own
-# exit status and the build limps on with an unsigned repo (see the Node.js
-# note below for how that failure mode actually bit us).
-RUN wget -q -O /tmp/google-chrome.pub https://dl.google.com/linux/linux_signing_key.pub \
-    && gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg /tmp/google-chrome.pub \
-    && rm /tmp/google-chrome.pub \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update && apt-get install -y --no-install-recommends google-chrome-stable \
+# Install Google Chrome, pinned to the version patchright drives.
+#
+# WHY PINNED: patchright is pinned (^1.61.1) and targets Chromium
+# 149.0.7827.55. An unpinned `google-chrome-stable` walks away from that on
+# every rebuild, silently — a rebuild on 2026-08-07 moved this image from
+# 149.0.7827.53 to 150.0.7871.114, leaving the browser a major version ahead of
+# the library driving it, with nothing in the build to say so.
+#
+# 150 is a particularly bad place to land: upstream Playwright went 149 (1.61)
+# straight to 151 (1.62) and skipped it, so no release of either library was
+# ever built against it.
+#
+# WHY A POOL .deb RATHER THAN `apt-get install pkg=<version>`: Google's apt repo
+# only ever indexes the CURRENT release, so a version pin against it works for
+# about a week and then fails permanently. The versioned .deb stays in the pool.
+# That decay has already started here — patchright's exact target, .55, is gone;
+# .53 is the only 149 build Google still serves.
+#
+# The checksum is not ceremony. Pinning a version without pinning the bytes
+# leaves a browser binary — the thing that renders untrusted pages — resolved by
+# hostname alone.
+#
+# BUMPING: match the major that the pinned patchright expects, readable from
+# node_modules/patchright-core/browsers.json. Expect 151 next, not 150.
+#
+# amd64 only, unchanged: Google ships no arm64 Chrome for Linux, and the repo
+# line this replaces was already `arch=amd64`. The guard makes that explicit
+# instead of surfacing as "Unable to locate package" four layers on.
+ARG CHROME_VERSION=149.0.7827.53-1
+ARG CHROME_SHA256=8aa34d8c9cbd5a37b98dca49ad0607bbf819a6d681c19834599cdb65329498f8
+RUN set -eu \
+    && case "$TARGETARCH" in \
+         amd64) ;; \
+         *) echo "google-chrome-stable is amd64-only; unsupported arch: $TARGETARCH" >&2; exit 1;; \
+       esac \
+    && wget -q -O /tmp/google-chrome.deb \
+       "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}_amd64.deb" \
+    && echo "${CHROME_SHA256}  /tmp/google-chrome.deb" | sha256sum -c - \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/google-chrome.deb \
+    && rm /tmp/google-chrome.deb \
+    && apt-mark hold google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
+
+# `apt-mark hold` above is load-bearing, not belt-and-braces: Chrome's own
+# postinst re-adds Google's apt repo, so without the hold any later
+# `apt-get upgrade` in this or a downstream layer would walk straight past the
+# pin and undo everything above.
 
 # Install Node.js LTS from the official nodejs.org tarball.
 #
