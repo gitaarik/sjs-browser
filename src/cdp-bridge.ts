@@ -58,6 +58,24 @@ export function createCdpBridge(options: CdpBridgeOptions): Promise<CdpBridge> {
       const pendingTargets = new Map<string, NodeJS.Timeout>();
       let nextResumeId = 1_000_000;
 
+      /**
+       * Ids of commands THIS bridge sent on Playwright's CDP socket.
+       *
+       * The auto-resume below is our own command, not a relayed one, but Chrome
+       * replies to it on the same socket and we forward everything Chrome says
+       * straight to the server. Playwright then receives a reply to a request it
+       * never issued, finds no pending callback, and throws a bare
+       * "Assertion error" from CRSession._onMessage — killing the run.
+       *
+       * The high starting number avoids COLLIDING with Playwright's ids, which
+       * was never the problem: Playwright rejects any id it did not issue. So
+       * the reply has to be swallowed here rather than merely made distinctive.
+       *
+       * Observed as `UNSOLICITED reply id=1000000` on run 1044, arriving as the
+       * last message before the socket died.
+       */
+      const selfIssuedIds = new Set<number>();
+
       // Server → Chrome
       const tunnelHandler = (rawData: WebSocket.RawData) => {
         try {
@@ -114,6 +132,16 @@ export function createCdpBridge(options: CdpBridgeOptions): Promise<CdpBridge> {
         if (!isBinary) {
           try {
             const cdp = JSON.parse(data.toString());
+
+            // Swallow the reply to a command we issued ourselves. Forwarding it
+            // is what kills Playwright — see selfIssuedIds above. Only replies
+            // carry an id; events do not, so this cannot drop an event.
+            if (typeof cdp.id === "number" && selfIssuedIds.has(cdp.id)) {
+              selfIssuedIds.delete(cdp.id);
+              console.log(`[CDP Bridge] Swallowed reply to our own command (id ${cdp.id})`);
+              return;
+            }
+
             if (
               cdp.method === "Target.attachedToTarget" &&
               cdp.params?.waitingForDebugger &&
@@ -124,8 +152,10 @@ export function createCdpBridge(options: CdpBridgeOptions): Promise<CdpBridge> {
               const timer = setTimeout(() => {
                 pendingTargets.delete(sessionId);
                 if (chromeWs.readyState === WebSocket.OPEN) {
+                  const resumeId = nextResumeId++;
+                  selfIssuedIds.add(resumeId);
                   const resumeMsg = JSON.stringify({
-                    id: nextResumeId++,
+                    id: resumeId,
                     method: "Runtime.runIfWaitingForDebugger",
                     sessionId,
                   });
@@ -168,6 +198,9 @@ export function createCdpBridge(options: CdpBridgeOptions): Promise<CdpBridge> {
           clearInterval(statsInterval);
           for (const timer of pendingTargets.values()) clearTimeout(timer);
           pendingTargets.clear();
+          // A resume whose reply never arrived would otherwise sit here for the
+          // life of the process.
+          selfIssuedIds.clear();
           tunnelWs.removeListener("message", tunnelHandler);
           if (chromeWs.readyState === WebSocket.OPEN) {
             chromeWs.close();
