@@ -194,7 +194,23 @@ fi
     cleanup_locks "$UDD"
     echo "$UDD" > "$CURRENT_PROFILE_FILE"
     echo "[Chrome] Launching on profile dir: $UDD"
-    google-chrome-stable "${CHROME_ARGS[@]}" --user-data-dir="$UDD" about:blank &
+    # Drop Chrome's container noise from stderr. In a container there is no
+    # session bus, no /run/dbus/system_bus_socket, no UPower and no phone to
+    # register for push — so Chrome logs the same handful of failures on a loop,
+    # tens of lines per launch, forever. It degrades gracefully in every case;
+    # the only real cost is that this buries anything worth reading. Hunting a
+    # CDP bug on 2026-08-08 meant digging real evidence out of exactly this.
+    #
+    # Filtered rather than fixed on purpose. Silencing it properly means running
+    # dbus daemons in the image, and the alternatives are worse: none of the
+    # DBUS_SESSION_BUS_ADDRESS values work (they replace one unparseable address
+    # with another — measured, all still 24 lines), and --password-store=basic
+    # only removes 2 of 24.
+    #
+    # Matches specific known-benign patterns, never a blanket stderr drop, so a
+    # real Chrome error still reaches the log.
+    google-chrome-stable "${CHROME_ARGS[@]}" --user-data-dir="$UDD" about:blank \
+      2> >(grep --line-buffered -vE 'dbus/(bus|object_proxy)\.cc|PHONE_REGISTRATION_ERROR|UPower/devices' >&2) &
     CHROME_CHILD=$!
     # Respawn onto a new profile dir as soon as the runtime requests one.
     while kill -0 "$CHROME_CHILD" 2>/dev/null; do
