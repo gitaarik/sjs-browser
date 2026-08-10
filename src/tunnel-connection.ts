@@ -24,7 +24,14 @@ export type TunnelStatus =
 
 export interface AuthPayload {
   token: string;
+  /** The running app's version — auto-updated from the release tarball. */
   version: string;
+  /**
+   * The image's version. Optional so an older server that ignores it, and an
+   * older client that never sends it, both stay compatible; the server records
+   * "unknown" in that case rather than guessing it equals `version`.
+   */
+  imageVersion?: string;
   headless?: boolean;
 }
 
@@ -128,6 +135,7 @@ export class TunnelConnection {
         type: "auth",
         token: this.opts.auth.token,
         version: this.opts.auth.version,
+        imageVersion: this.opts.auth.imageVersion,
         headless: this.opts.auth.headless,
       });
     });

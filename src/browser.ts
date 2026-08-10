@@ -63,6 +63,14 @@ interface TunnelConfig {
    * a static placeholder would be useless for verifying updates.
    */
   buildVersion: string;
+  /**
+   * The IMAGE's version, which `buildVersion` above deliberately does not
+   * report: it prefers the auto-updated tarball, so an instance on a stale
+   * image still shows a current version. Sent separately so the dashboard can
+   * tell "app is current" from "everything is current" — see the note in
+   * main.ts for the month-long instance of exactly that.
+   */
+  imageVersion: string;
 }
 
 let conn: TunnelConnection | null = null;
@@ -1860,6 +1868,7 @@ export function connect(config: TunnelConfig): void {
       auth: {
         token: config.apiToken,
         version: config.buildVersion,
+        imageVersion: config.imageVersion,
         headless: true,
       },
       log,

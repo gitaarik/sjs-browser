@@ -24,26 +24,50 @@ if (!apiToken) {
   process.exit(1);
 }
 
-// Build metadata: prefer .build-info.json (written into the tarball at
-// release time, so it stays accurate after the bootstrap extracts a newer
-// version) and fall back to the env vars baked into the image.
-function readBuildInfo(): { version: string; build_date: string } {
+// A container has TWO independent versions, and conflating them hides a real
+// problem. `src/` auto-updates from the release tarball on every boot; the
+// image — Chrome, Node, the base OS, chrome-common.sh, entrypoint.sh — only
+// changes when the host pulls. So a container can run current app code on a
+// months-old image, and until 2026-08-09 it reported only the former.
+//
+// That is not hypothetical: the :latest image tag sat on v1.0.1 from
+// 2026-07-11 while app code auto-updated to v1.0.4, so every instance
+// reported "1.0.4" and nothing anywhere showed that the Chrome version pin
+// from v1.0.2 had never arrived. Both are reported now, here and to the
+// server's tunnel registry.
+
+/**
+ * The image's own build identity, baked at `docker build` time. Changes only
+ * on an image pull — the bootstrap's auto-update cannot move it.
+ */
+const imageVersion = (process.env.SJS_BROWSER_BUILD_VERSION ?? "unknown").replace(/^v/, "");
+const imageBuildDate = process.env.SJS_BROWSER_BUILD_DATE ?? "unknown";
+
+/**
+ * The running app's identity: `.build-info.json`, written into the tarball at
+ * release time so it stays accurate after the bootstrap extracts a newer
+ * version. Falls back to the image's own when no tarball is installed — first
+ * boot, or `SJS_BROWSER_CHANNEL=disabled`, where the two are legitimately equal.
+ */
+function readAppBuildInfo(): { version: string; build_date: string } {
   try {
     const info = JSON.parse(readFileSync(".build-info.json", "utf-8"));
     return { version: String(info.version ?? "unknown"), build_date: String(info.build_date ?? "unknown") };
   } catch {
-    return {
-      version: (process.env.SJS_BROWSER_BUILD_VERSION ?? "unknown").replace(/^v/, ""),
-      build_date: process.env.SJS_BROWSER_BUILD_DATE ?? "unknown",
-    };
+    return { version: imageVersion, build_date: imageBuildDate };
   }
 }
 
-const { version: buildVersion, build_date: buildDate } = readBuildInfo();
+const { version: buildVersion, build_date: buildDate } = readAppBuildInfo();
 
 console.log("============================================");
 console.log(" Smart Job Seeker — sjs-browser");
-console.log(`  Build: ${buildVersion} (${buildDate})`);
+console.log(`  App:    ${buildVersion} (${buildDate})`);
+// Printed unconditionally rather than only on a mismatch. Divergence is the
+// normal state — app updates land between image pulls — so a conditional line
+// would train the eye to expect its absence and make the interesting case
+// (a very old image) look like the boring one.
+console.log(`  Image:  ${imageVersion} (${imageBuildDate})`);
 console.log(`  Server: ${serverUrl}`);
 console.log("============================================");
 
@@ -111,4 +135,4 @@ process.on("SIGINT", () => {
 });
 
 // Start the browser channel
-connect({ serverUrl, apiToken, buildVersion });
+connect({ serverUrl, apiToken, buildVersion, imageVersion });
