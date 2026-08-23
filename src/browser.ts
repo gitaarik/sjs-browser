@@ -635,6 +635,22 @@ const XDOTOOL_BUTTON_MAP: Record<"left" | "middle" | "right", number> = {
  * accounts for that. Inside the docker tunnel, the Chrome window runs
  * full-screen on a virtual Xvfb display with devicePixelRatio=1, so CSS
  * pixels and screen pixels are 1:1.
+ *
+ * `viewportHeightCss` MUST be `window.innerHeight`, not
+ * `Page.getLayoutMetrics().cssLayoutViewport.clientHeight`. The two differ by
+ * exactly the horizontal scrollbar: `clientHeight` excludes it, the window
+ * height obviously does not, so on any page wide enough to scroll sideways the
+ * subtraction credits the scrollbar to the toolbar and every click lands that
+ * far BELOW its target. Measured on Chrome 149 under Xvfb — same window, one
+ * page with a horizontal scrollbar and one without:
+ *
+ *   no scrollbar          bounds 1050  clientHeight 963  innerHeight 963  → 87 / 87
+ *   horizontal scrollbar  bounds 1050  clientHeight 948  innerHeight 963  → 102 / 87
+ *
+ * 15px, intermittent by whether the page happens to scroll sideways at that
+ * moment, and always downward. That is the "filter click lands one row low"
+ * symptom in `planning/SEARCH-FORM-FILTER-INTEGRITY.md`, which cost a run a
+ * silently wrong location filter and still reported success.
  */
 function pageToScreen(
   pageX: number,
@@ -835,16 +851,19 @@ async function handleClickElement(
         const { bounds } = await cdpCall<{
           bounds: { left?: number; top?: number; width: number; height: number };
         }>("Browser.getWindowForTarget", {});
-        const layoutMetrics = await cdpCall<{
-          cssLayoutViewport: { clientHeight: number };
-        }>("Page.getLayoutMetrics", {});
+        const viewport = await cdpCall<{
+          result: { value: { innerHeight: number } };
+        }>("Runtime.evaluate", {
+          expression: "({ innerHeight: window.innerHeight })",
+          returnByValue: true,
+        });
 
         const win = {
           left: bounds.left ?? 0,
           top: bounds.top ?? 0,
           height: bounds.height,
         };
-        const viewportH = layoutMetrics.cssLayoutViewport.clientHeight;
+        const viewportH = viewport.result.value.innerHeight;
 
         const screenPath = pagePath.map((p) =>
           pageToScreen(p.x, p.y, win, viewportH)
@@ -1028,17 +1047,20 @@ async function handleClickAt(
     const { bounds } = await cdpCall<{
       bounds: { left?: number; top?: number; width: number; height: number };
     }>("Browser.getWindowForTarget", {});
-    const layoutMetrics = await cdpCall<{
-      cssLayoutViewport: { clientHeight: number; clientWidth: number };
-    }>("Page.getLayoutMetrics", {});
+    const viewport = await cdpCall<{
+      result: { value: { innerHeight: number; innerWidth: number } };
+    }>("Runtime.evaluate", {
+      expression: "({ innerHeight: window.innerHeight, innerWidth: window.innerWidth })",
+      returnByValue: true,
+    });
 
     const win = {
       left: bounds.left ?? 0,
       top: bounds.top ?? 0,
       height: bounds.height,
     };
-    const viewportH = layoutMetrics.cssLayoutViewport.clientHeight;
-    const viewportW = layoutMetrics.cssLayoutViewport.clientWidth;
+    const viewportH = viewport.result.value.innerHeight;
+    const viewportW = viewport.result.value.innerWidth;
 
     // Bezier path from the cursor's real last position so the path chains
     // between actions; fall back to a random in-viewport point only on the
