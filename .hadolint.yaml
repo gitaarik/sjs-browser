@@ -1,0 +1,8 @@
+# DL3008 wants every apt package pinned to a version. Ubuntu's archive keeps
+# only the current version of each package, so a pin fails the build as soon
+# as a security update replaces it: that trades a patched package for a
+# broken build. What pins the distro here is the base image tag. The one
+# package that must not move, Chrome, is pinned by version AND checksum from
+# Google's pool (see the Dockerfile), because it has to match patchright.
+ignored:
+  - DL3008

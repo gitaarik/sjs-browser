@@ -27,6 +27,11 @@
 
 FROM ubuntu:26.04
 
+# bash with pipefail for every RUN below: several pipe a download into
+# something (`curl | tar`, `echo | sha256sum -c`), and under the default
+# /bin/sh a pipe fails only if its LAST command does.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:99
 
@@ -119,7 +124,7 @@ RUN set -eu \
          amd64) ;; \
          *) echo "google-chrome-stable is amd64-only; unsupported arch: $TARGETARCH" >&2; exit 1;; \
        esac \
-    && wget -q -O /tmp/google-chrome.deb \
+    && curl -fsSLo /tmp/google-chrome.deb \
        "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}_amd64.deb" \
     && echo "${CHROME_SHA256}  /tmp/google-chrome.deb" | sha256sum -c - \
     && apt-get update \
@@ -181,7 +186,7 @@ RUN chmod +x /chrome-common.sh /entrypoint.sh /sjs-browser/bootstrap.sh
 
 # Health check — verify Chrome CDP is responsive
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -sf http://127.0.0.1:9222/json/version > /dev/null || exit 1
+  CMD ["sh", "-c", "curl -sf http://127.0.0.1:9222/json/version > /dev/null || exit 1"]
 
 # Use tini as PID 1 for proper signal handling and zombie reaping
 ENTRYPOINT ["tini", "--"]

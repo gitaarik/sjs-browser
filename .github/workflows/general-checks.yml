@@ -73,9 +73,10 @@ jobs:
       - uses: hadolint/hadolint-action@v3.4.0
         with:
           recursive: true
-          # Lenient on first adoption — fail only on hadolint errors (DL3000-tier),
-          # not on warnings/info. Tighten later by removing this line.
-          failure-threshold: error
+          # Warnings fail too, since 2026-09-24, when the last ones were fixed:
+          # pipefail for the piped RUNs, curl rather than wget + curl, and an
+          # exec-form HEALTHCHECK. DL3008 is ignored in .hadolint.yaml, with why.
+          failure-threshold: warning
 
   # Moved here from sjs-ops, which had to check out every submodule to reach
   # this Dockerfile and paid metered Actions minutes to build it — it was the
@@ -94,11 +95,11 @@ jobs:
           # Don't push, just load into the local docker daemon.
           load: true
           # Tag is required but doesn't matter since we're not pushing.
-          tags: sjs-browser-scan:latest
+          tags: sjs-browser-scan:ci
       - name: Run Dockle
         uses: goodwithtech/dockle-action@v0.4.15
         with:
-          image: 'sjs-browser-scan:latest'
+          image: 'sjs-browser-scan:ci'
           format: 'list'
           exit-code: '1'
           # Fail only on FATAL; WARN/INFO accepted during adoption.
@@ -113,4 +114,4 @@ jobs:
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -e CI=true \
-            wagoodman/dive:v0.13.1 sjs-browser-scan:latest
+            wagoodman/dive:v0.13.1 sjs-browser-scan:ci
