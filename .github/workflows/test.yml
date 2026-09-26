@@ -27,3 +27,8 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm install --no-audit --no-fund
       - run: npx tsc --noEmit
+      # oxlint and prettier, pinned in package.json's scripts rather than
+      # installed as devDependencies, which would ship in the release tarball.
+      # Both clean since 2026-09-26, so any finding fails.
+      - run: npm run lint
+      - run: npm run format:check

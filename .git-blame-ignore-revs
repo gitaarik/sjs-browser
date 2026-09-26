@@ -1,0 +1,13 @@
+# Commits that changed formatting only, and would otherwise make `git blame`
+# attribute every line to a whitespace pass.
+#
+# Local git does not read this automatically. Enable it once per clone:
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub applies it to its blame view without any setup.
+
+# style: format the TypeScript with prettier
+# 5 of 8 files. Nothing had formatted this repo's TypeScript before; the
+# settings keep its own style, so the pass is mostly line wrapping.
+20c916a227b9cab8434c27b332a08b6ce9cd1501
