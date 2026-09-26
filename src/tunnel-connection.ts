@@ -16,11 +16,7 @@
 import WebSocket from "ws";
 
 export type TunnelStatus =
-  | "disconnected"
-  | "connecting"
-  | "authenticating"
-  | "connected"
-  | "reconnecting";
+  "disconnected" | "connecting" | "authenticating" | "connected" | "reconnecting";
 
 export interface AuthPayload {
   token: string;
@@ -115,8 +111,7 @@ export class TunnelConnection {
 
     if (
       this.ws &&
-      (this.ws.readyState === WebSocket.OPEN ||
-        this.ws.readyState === WebSocket.CONNECTING)
+      (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
     ) {
       this.opts.log("Already connected/connecting");
       return;
@@ -161,10 +156,7 @@ export class TunnelConnection {
 
       if (this.opts.autoReconnect === false) return;
 
-      const delay = Math.min(
-        1000 * Math.pow(2, this.reconnectAttempts),
-        MAX_RECONNECT_DELAY_MS,
-      );
+      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), MAX_RECONNECT_DELAY_MS);
       this.reconnectAttempts++;
       this.setStatus("reconnecting");
       this.opts.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})...`);
@@ -238,9 +230,7 @@ export class TunnelConnection {
   private startHandshakeTimer(socket: WebSocket): void {
     this.stopHandshakeTimer();
     this.handshakeTimer = setTimeout(() => {
-      this.opts.log(
-        `Handshake timeout after ${HANDSHAKE_TIMEOUT_MS / 1000}s — terminating`,
-      );
+      this.opts.log(`Handshake timeout after ${HANDSHAKE_TIMEOUT_MS / 1000}s — terminating`);
       this.handshakeTimer = null;
       socket.terminate();
     }, HANDSHAKE_TIMEOUT_MS);

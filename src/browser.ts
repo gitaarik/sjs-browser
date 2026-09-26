@@ -171,7 +171,9 @@ function withInputGate<T>(fn: () => Promise<T>): Promise<T> {
 
 function send(msg: ClientMessage): void {
   if (msg.type !== "cdp" && msg.type !== "cdpBinary" && msg.type !== "pong") {
-    logTrace(`  -> ${msg.type}${msg.type === "sessionError" ? ` (${(msg as { error: string }).error})` : ""}`);
+    logTrace(
+      `  -> ${msg.type}${msg.type === "sessionError" ? ` (${(msg as { error: string }).error})` : ""}`,
+    );
   }
   conn?.send(msg);
 }
@@ -189,7 +191,11 @@ function send(msg: ClientMessage): void {
  * two `/json` fetches (one to find the page id, another to look up the WS
  * URL) on top of opening a fresh WebSocket — pure duplicate work.
  */
-async function fetchPageTarget(): Promise<{ pageId: string; webSocketDebuggerUrl: string; url?: string }> {
+async function fetchPageTarget(): Promise<{
+  pageId: string;
+  webSocketDebuggerUrl: string;
+  url?: string;
+}> {
   const targets = await new Promise<
     Array<{ id: string; type: string; webSocketDebuggerUrl?: string; url?: string }>
   >((resolve, reject) => {
@@ -197,12 +203,18 @@ async function fetchPageTarget(): Promise<{ pageId: string; webSocketDebuggerUrl
       let data = "";
       res.on("data", (chunk: string) => (data += chunk));
       res.on("end", () => {
-        try { resolve(JSON.parse(data)); }
-        catch { reject(new Error("Invalid JSON from /json")); }
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          reject(new Error("Invalid JSON from /json"));
+        }
       });
     });
     req.on("error", reject);
-    req.setTimeout(3000, () => { req.destroy(); reject(new Error("Timeout fetching CDP targets")); });
+    req.setTimeout(3000, () => {
+      req.destroy();
+      reject(new Error("Timeout fetching CDP targets"));
+    });
   });
 
   const page = targets.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
@@ -212,10 +224,8 @@ async function fetchPageTarget(): Promise<{ pageId: string; webSocketDebuggerUrl
   return { pageId: page.id, webSocketDebuggerUrl: page.webSocketDebuggerUrl, url: page.url };
 }
 
-
 type DirectPageCdpAttempt =
-  | { ok: true }
-  | { ok: false; phase: "connect" | "callback"; error: Error };
+  { ok: true } | { ok: false; phase: "connect" | "callback"; error: Error };
 
 /**
  * One connect-and-run attempt against a specific page target. Resolves
@@ -333,9 +343,7 @@ async function withDirectPageCdp(
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const remaining = timeoutMs - (Date.now() - started);
     if (remaining <= 0) {
-      throw new Error(
-        `${label}: timeout — budget exhausted after ${attempt - 1} attempt(s)`,
-      );
+      throw new Error(`${label}: timeout — budget exhausted after ${attempt - 1} attempt(s)`);
     }
     const target = await fetchPageTarget();
     const result = await attemptDirectPageCdp(
@@ -377,7 +385,9 @@ function typeCharViaXdotool(ch: string): Promise<void> {
       stdio: ["ignore", "ignore", "pipe"],
     });
     let stderr = "";
-    proc.stderr?.on("data", (d) => { stderr += d.toString(); });
+    proc.stderr?.on("data", (d) => {
+      stderr += d.toString();
+    });
     proc.on("error", (err) => reject(err));
     proc.on("close", (code) => {
       if (code === 0) resolve();
@@ -398,7 +408,9 @@ async function handleClearInput(): Promise<void> {
           stdio: ["ignore", "ignore", "pipe"],
         });
         let stderr = "";
-        proc.stderr?.on("data", (d) => { stderr += d.toString(); });
+        proc.stderr?.on("data", (d) => {
+          stderr += d.toString();
+        });
         proc.on("error", reject);
         proc.on("close", (code) => {
           if (code === 0) resolve();
@@ -415,11 +427,13 @@ async function handleClearInput(): Promise<void> {
 
   await withDirectPageCdp("clearInput", 30_000, async (pageWs, nextId) => {
     const sendKey = (eventType: string, key: string, code: string, modifiers = 0) => {
-      pageWs.send(JSON.stringify({
-        id: nextId(),
-        method: "Input.dispatchKeyEvent",
-        params: { type: eventType, key, code, modifiers },
-      }));
+      pageWs.send(
+        JSON.stringify({
+          id: nextId(),
+          method: "Input.dispatchKeyEvent",
+          params: { type: eventType, key, code, modifiers },
+        }),
+      );
     };
     sendKey("keyDown", "a", "KeyA", 2);
     sendKey("keyUp", "a", "KeyA", 2);
@@ -434,7 +448,9 @@ function pressKeyViaXdotool(key: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn("xdotool", ["key", key], { stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
-    proc.stderr?.on("data", (d) => { stderr += d.toString(); });
+    proc.stderr?.on("data", (d) => {
+      stderr += d.toString();
+    });
     proc.on("error", reject);
     proc.on("close", (code) => {
       if (code === 0) resolve();
@@ -443,7 +459,11 @@ function pressKeyViaXdotool(key: string): Promise<void> {
   });
 }
 
-async function handleTypeText(text: string, charDelayMs: number, submitAfter = false): Promise<void> {
+async function handleTypeText(
+  text: string,
+  charDelayMs: number,
+  submitAfter = false,
+): Promise<void> {
   // Linux container — prefer xdotool for real X11 keypress events
   if (process.platform === "linux") {
     try {
@@ -459,7 +479,9 @@ async function handleTypeText(text: string, charDelayMs: number, submitAfter = f
         if (text) await new Promise((r) => setTimeout(r, 80 + Math.random() * 60));
         await pressKeyViaXdotool("Return");
       }
-      log(`Typed ${text.length} chars via xdotool${submitAfter ? " + Enter" : ""} (${charDelayMs}ms/char)`);
+      log(
+        `Typed ${text.length} chars via xdotool${submitAfter ? " + Enter" : ""} (${charDelayMs}ms/char)`,
+      );
       return;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -469,16 +491,20 @@ async function handleTypeText(text: string, charDelayMs: number, submitAfter = f
 
   await withDirectPageCdp("typeText", 30_000, async (pageWs, nextId) => {
     for (const char of text) {
-      pageWs.send(JSON.stringify({
-        id: nextId(),
-        method: "Input.dispatchKeyEvent",
-        params: { type: "keyDown", text: char, key: char, code: "" },
-      }));
-      pageWs.send(JSON.stringify({
-        id: nextId(),
-        method: "Input.dispatchKeyEvent",
-        params: { type: "keyUp", key: char, code: "" },
-      }));
+      pageWs.send(
+        JSON.stringify({
+          id: nextId(),
+          method: "Input.dispatchKeyEvent",
+          params: { type: "keyDown", text: char, key: char, code: "" },
+        }),
+      );
+      pageWs.send(
+        JSON.stringify({
+          id: nextId(),
+          method: "Input.dispatchKeyEvent",
+          params: { type: "keyUp", key: char, code: "" },
+        }),
+      );
 
       if (charDelayMs > 0) {
         const variance = charDelayMs * 0.4;
@@ -487,19 +513,25 @@ async function handleTypeText(text: string, charDelayMs: number, submitAfter = f
       }
     }
     if (submitAfter) {
-      pageWs.send(JSON.stringify({
-        id: nextId(),
-        method: "Input.dispatchKeyEvent",
-        params: { type: "keyDown", key: "Enter", code: "Enter", text: "\r" },
-      }));
-      pageWs.send(JSON.stringify({
-        id: nextId(),
-        method: "Input.dispatchKeyEvent",
-        params: { type: "keyUp", key: "Enter", code: "Enter" },
-      }));
+      pageWs.send(
+        JSON.stringify({
+          id: nextId(),
+          method: "Input.dispatchKeyEvent",
+          params: { type: "keyDown", key: "Enter", code: "Enter", text: "\r" },
+        }),
+      );
+      pageWs.send(
+        JSON.stringify({
+          id: nextId(),
+          method: "Input.dispatchKeyEvent",
+          params: { type: "keyUp", key: "Enter", code: "Enter" },
+        }),
+      );
     }
   });
-  log(`Typed ${text.length} chars locally via CDP${submitAfter ? " + Enter" : ""} (${charDelayMs}ms/char)`);
+  log(
+    `Typed ${text.length} chars locally via CDP${submitAfter ? " + Enter" : ""} (${charDelayMs}ms/char)`,
+  );
 }
 
 async function handleScrollWheel(
@@ -508,18 +540,22 @@ async function handleScrollWheel(
   steps: { deltaY: number; delayMs: number }[],
 ): Promise<void> {
   await withDirectPageCdp("scrollWheel", 30_000, async (pageWs, nextId) => {
-    pageWs.send(JSON.stringify({
-      id: nextId(),
-      method: "Input.dispatchMouseEvent",
-      params: { type: "mouseMoved", x: mouseX, y: mouseY },
-    }));
-
-    for (const step of steps) {
-      pageWs.send(JSON.stringify({
+    pageWs.send(
+      JSON.stringify({
         id: nextId(),
         method: "Input.dispatchMouseEvent",
-        params: { type: "mouseWheel", x: mouseX, y: mouseY, deltaX: 0, deltaY: step.deltaY },
-      }));
+        params: { type: "mouseMoved", x: mouseX, y: mouseY },
+      }),
+    );
+
+    for (const step of steps) {
+      pageWs.send(
+        JSON.stringify({
+          id: nextId(),
+          method: "Input.dispatchMouseEvent",
+          params: { type: "mouseWheel", x: mouseX, y: mouseY, deltaX: 0, deltaY: step.deltaY },
+        }),
+      );
       if (step.delayMs > 0) {
         await new Promise((r) => setTimeout(r, step.delayMs));
       }
@@ -528,16 +564,16 @@ async function handleScrollWheel(
   log(`Scrolled ${steps.length} steps locally`);
 }
 
-async function handleMouseMove(
-  steps: { x: number; y: number; delayMs: number }[],
-): Promise<void> {
+async function handleMouseMove(steps: { x: number; y: number; delayMs: number }[]): Promise<void> {
   await withDirectPageCdp("mouseMove", 30_000, async (pageWs, nextId) => {
     for (const step of steps) {
-      pageWs.send(JSON.stringify({
-        id: nextId(),
-        method: "Input.dispatchMouseEvent",
-        params: { type: "mouseMoved", x: step.x, y: step.y },
-      }));
+      pageWs.send(
+        JSON.stringify({
+          id: nextId(),
+          method: "Input.dispatchMouseEvent",
+          params: { type: "mouseMoved", x: step.x, y: step.y },
+        }),
+      );
       if (step.delayMs > 0) {
         await new Promise((r) => setTimeout(r, step.delayMs));
       }
@@ -560,17 +596,17 @@ function quadToBox(quad: number[]): { x: number; y: number; width: number; heigh
 
 const MODIFIER_MAP: Record<string, { key: string; code: string; keyCode: number; bit: number }> = {
   Control: { key: "Control", code: "ControlLeft", keyCode: 17, bit: 2 },
-  Shift:   { key: "Shift",   code: "ShiftLeft",   keyCode: 16, bit: 8 },
-  Alt:     { key: "Alt",     code: "AltLeft",      keyCode: 18, bit: 1 },
-  Meta:    { key: "Meta",    code: "MetaLeft",     keyCode: 91, bit: 4 },
+  Shift: { key: "Shift", code: "ShiftLeft", keyCode: 16, bit: 8 },
+  Alt: { key: "Alt", code: "AltLeft", keyCode: 18, bit: 1 },
+  Meta: { key: "Meta", code: "MetaLeft", keyCode: 91, bit: 4 },
 };
 
 // Modifier names → xdotool key names (different vocabulary from CDP's MODIFIER_MAP).
 const XDOTOOL_MODIFIER_MAP: Record<string, string> = {
   Control: "ctrl",
-  Shift:   "shift",
-  Alt:     "alt",
-  Meta:    "super",
+  Shift: "shift",
+  Alt: "alt",
+  Meta: "super",
 };
 
 // xdotool button numbers: 1=left, 2=middle, 3=right.
@@ -663,7 +699,9 @@ function clickViaXdotool(
   return new Promise((resolve, reject) => {
     const proc = spawn("xdotool", args, { stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
-    proc.stderr?.on("data", (d) => { stderr += d.toString(); });
+    proc.stderr?.on("data", (d) => {
+      stderr += d.toString();
+    });
     proc.on("error", reject);
     proc.on("close", (code) => {
       if (code === 0) resolve();
@@ -686,16 +724,30 @@ async function handleClickElement(
       const req = http.get(`http://127.0.0.1:${CDP_PORT}/json`, (res) => {
         let data = "";
         res.on("data", (chunk: string) => (data += chunk));
-        res.on("end", () => { try { resolve(JSON.parse(data)); } catch { resolve([]); } });
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            resolve([]);
+          }
+        });
       });
       req.on("error", () => resolve([]));
-      req.setTimeout(1000, () => { req.destroy(); resolve([]); });
+      req.setTimeout(1000, () => {
+        req.destroy();
+        resolve([]);
+      });
     });
-    targetsBefore = targets.filter(t => t.type === "page").map(t => t.id);
-  } catch { /* ignore */ }
+    targetsBefore = targets.filter((t) => t.type === "page").map((t) => t.id);
+  } catch {
+    /* ignore */
+  }
 
   await withDirectPageCdp("clickElement", timeout + 5000, async (pageWs, nextId) => {
-    const cdpCall = <T = Record<string, unknown>>(method: string, params: Record<string, unknown> = {}): Promise<T> => {
+    const cdpCall = <T = Record<string, unknown>>(
+      method: string,
+      params: Record<string, unknown> = {},
+    ): Promise<T> => {
       return new Promise((resolve, reject) => {
         const id = nextId();
         const timer = setTimeout(() => {
@@ -713,7 +765,9 @@ async function handleClickElement(
               else resolve((msg.result || {}) as T);
             }
           } catch (err) {
-            log(`clickElement cdpCall parse error: ${err instanceof Error ? err.message : String(err)}`);
+            log(
+              `clickElement cdpCall parse error: ${err instanceof Error ? err.message : String(err)}`,
+            );
           }
         };
 
@@ -732,7 +786,9 @@ async function handleClickElement(
     await cdpCall("DOM.scrollIntoViewIfNeeded", { nodeId });
     await new Promise((r) => setTimeout(r, 100));
 
-    const { model } = await cdpCall<{ model: { content: number[] } }>("DOM.getBoxModel", { nodeId });
+    const { model } = await cdpCall<{ model: { content: number[] } }>("DOM.getBoxModel", {
+      nodeId,
+    });
     if (!model?.content || model.content.length < 8) {
       throw new Error(`Cannot get bounding box for: ${selector}`);
     }
@@ -765,15 +821,17 @@ async function handleClickElement(
     let listenerCtxId: number | null = null;
     try {
       const { frameTree } = await cdpCall<{ frameTree: { frame: { id: string } } }>(
-        "Page.getFrameTree", {},
+        "Page.getFrameTree",
+        {},
       );
       const { executionContextId } = await cdpCall<{ executionContextId: number }>(
         "Page.createIsolatedWorld",
         { frameId: frameTree.frame.id, worldName: "sjs-click-monitor" },
       );
-      const { object } = await cdpCall<{ object: { objectId?: string } }>(
-        "DOM.resolveNode", { nodeId, executionContextId },
-      );
+      const { object } = await cdpCall<{ object: { objectId?: string } }>("DOM.resolveNode", {
+        nodeId,
+        executionContextId,
+      });
       if (object.objectId) {
         await cdpCall("Runtime.callFunctionOn", {
           objectId: object.objectId,
@@ -820,9 +878,7 @@ async function handleClickElement(
         };
         const viewportH = viewport.result.value.innerHeight;
 
-        const screenPath = pagePath.map((p) =>
-          pageToScreen(p.x, p.y, win, viewportH)
-        );
+        const screenPath = pagePath.map((p) => pageToScreen(p.x, p.y, win, viewportH));
 
         await clickViaXdotool(screenPath, button, modifiers ?? []);
         clickPerformed = true;
@@ -836,11 +892,13 @@ async function handleClickElement(
     // OS keyboard focus may stay on the omnibox — see comment above.
     if (!clickPerformed) {
       for (const point of pagePath) {
-        pageWs.send(JSON.stringify({
-          id: nextId(),
-          method: "Input.dispatchMouseEvent",
-          params: { type: "mouseMoved", x: point.x, y: point.y },
-        }));
+        pageWs.send(
+          JSON.stringify({
+            id: nextId(),
+            method: "Input.dispatchMouseEvent",
+            params: { type: "mouseMoved", x: point.x, y: point.y },
+          }),
+        );
         if (point.delayMs > 0) {
           await new Promise((r) => setTimeout(r, point.delayMs));
         }
@@ -851,36 +909,69 @@ async function handleClickElement(
       const modifierBitmask = (modifiers || []).reduce((mask, mod) => {
         const info = MODIFIER_MAP[mod];
         if (info) {
-          pageWs.send(JSON.stringify({
-            id: nextId(),
-            method: "Input.dispatchKeyEvent",
-            params: { type: "rawKeyDown", key: info.key, code: info.code, windowsVirtualKeyCode: info.keyCode, modifiers: mask | info.bit },
-          }));
+          pageWs.send(
+            JSON.stringify({
+              id: nextId(),
+              method: "Input.dispatchKeyEvent",
+              params: {
+                type: "rawKeyDown",
+                key: info.key,
+                code: info.code,
+                windowsVirtualKeyCode: info.keyCode,
+                modifiers: mask | info.bit,
+              },
+            }),
+          );
           return mask | info.bit;
         }
         return mask;
       }, 0);
 
-      pageWs.send(JSON.stringify({
-        id: nextId(),
-        method: "Input.dispatchMouseEvent",
-        params: { type: "mousePressed", x: targetX, y: targetY, button, clickCount: 1, modifiers: modifierBitmask },
-      }));
+      pageWs.send(
+        JSON.stringify({
+          id: nextId(),
+          method: "Input.dispatchMouseEvent",
+          params: {
+            type: "mousePressed",
+            x: targetX,
+            y: targetY,
+            button,
+            clickCount: 1,
+            modifiers: modifierBitmask,
+          },
+        }),
+      );
       await new Promise((r) => setTimeout(r, 30 + Math.random() * 50));
-      pageWs.send(JSON.stringify({
-        id: nextId(),
-        method: "Input.dispatchMouseEvent",
-        params: { type: "mouseReleased", x: targetX, y: targetY, button, clickCount: 1, modifiers: modifierBitmask },
-      }));
+      pageWs.send(
+        JSON.stringify({
+          id: nextId(),
+          method: "Input.dispatchMouseEvent",
+          params: {
+            type: "mouseReleased",
+            x: targetX,
+            y: targetY,
+            button,
+            clickCount: 1,
+            modifiers: modifierBitmask,
+          },
+        }),
+      );
 
       for (const mod of (modifiers || []).slice().reverse()) {
         const info = MODIFIER_MAP[mod];
         if (info) {
-          pageWs.send(JSON.stringify({
-            id: nextId(),
-            method: "Input.dispatchKeyEvent",
-            params: { type: "keyUp", key: info.key, code: info.code, windowsVirtualKeyCode: info.keyCode },
-          }));
+          pageWs.send(
+            JSON.stringify({
+              id: nextId(),
+              method: "Input.dispatchKeyEvent",
+              params: {
+                type: "keyUp",
+                key: info.key,
+                code: info.code,
+                windowsVirtualKeyCode: info.keyCode,
+              },
+            }),
+          );
         }
       }
     }
@@ -891,20 +982,17 @@ async function handleClickElement(
     // the JS context was destroyed, the page navigated — also success.
     if (listenerCtxId !== null) {
       try {
-        const result = await cdpCall<{ result: { value: string } }>(
-          "Runtime.callFunctionOn",
-          {
-            executionContextId: listenerCtxId,
-            functionDeclaration: `function() {
+        const result = await cdpCall<{ result: { value: string } }>("Runtime.callFunctionOn", {
+          executionContextId: listenerCtxId,
+          functionDeclaration: `function() {
               return Promise.race([
                 globalThis.__sjsClickPromise || Promise.resolve('not-armed'),
                 new Promise((r) => setTimeout(() => r('event-timeout'), 3000)),
               ]);
             }`,
-            awaitPromise: true,
-            returnByValue: true,
-          },
-        );
+          awaitPromise: true,
+          returnByValue: true,
+        });
         const outcome = String(result.result?.value ?? "unknown");
         if (outcome === "event-timeout") {
           throw new Error(
@@ -933,18 +1021,31 @@ async function handleClickElement(
         const req = http.get(`http://127.0.0.1:${CDP_PORT}/json`, (res) => {
           let data = "";
           res.on("data", (chunk: string) => (data += chunk));
-          res.on("end", () => { try { resolve(JSON.parse(data)); } catch { resolve([]); } });
+          res.on("end", () => {
+            try {
+              resolve(JSON.parse(data));
+            } catch {
+              resolve([]);
+            }
+          });
         });
         req.on("error", () => resolve([]));
-        req.setTimeout(1000, () => { req.destroy(); resolve([]); });
+        req.setTimeout(1000, () => {
+          req.destroy();
+          resolve([]);
+        });
       });
-      const pagesAfter = targets.filter(t => t.type === "page").map(t => t.id);
-      newTabOpened = pagesAfter.some(id => !targetsBefore.includes(id));
-    } catch { /* ignore */ }
+      const pagesAfter = targets.filter((t) => t.type === "page").map((t) => t.id);
+      newTabOpened = pagesAfter.some((id) => !targetsBefore.includes(id));
+    } catch {
+      /* ignore */
+    }
   }
 
   send({ type: "clickElementResponse", requestId, success: true, newTabOpened });
-  log(`Clicked element locally: ${selector}${modifiers?.length ? ` [${modifiers.join("+")}]` : ""}${newTabOpened ? " (new tab opened)" : ""}`);
+  log(
+    `Clicked element locally: ${selector}${modifiers?.length ? ` [${modifiers.join("+")}]` : ""}${newTabOpened ? " (new tab opened)" : ""}`,
+  );
 }
 
 /**
@@ -972,7 +1073,10 @@ async function handleClickAt(
   }
 
   await withDirectPageCdp("clickAt", timeout + 5000, async (pageWs, nextId) => {
-    const cdpCall = <T = Record<string, unknown>>(method: string, params: Record<string, unknown> = {}): Promise<T> => {
+    const cdpCall = <T = Record<string, unknown>>(
+      method: string,
+      params: Record<string, unknown> = {},
+    ): Promise<T> => {
       return new Promise((resolve, reject) => {
         const id = nextId();
         const timer = setTimeout(() => {
@@ -1033,7 +1137,9 @@ async function handleClickAt(
   });
 
   send({ type: "clickAtResponse", requestId, success: true });
-  log(`Clicked at (${Math.round(pageX)}, ${Math.round(pageY)}) via xdotool${modifiers?.length ? ` [${modifiers.join("+")}]` : ""}`);
+  log(
+    `Clicked at (${Math.round(pageX)}, ${Math.round(pageY)}) via xdotool${modifiers?.length ? ` [${modifiers.join("+")}]` : ""}`,
+  );
 }
 
 async function handleScreenshotRequest(
@@ -1079,8 +1185,11 @@ async function handleScreenshotRequest(
         const msg = JSON.parse(raw.toString());
 
         if (msg.id === 1 && msg.result?.targetInfos) {
-          const pages = (msg.result.targetInfos as { targetId: string; type: string; url: string }[])
-            .filter((t) => t.type === "page" && !t.url.startsWith("chrome://") && t.url !== "about:blank");
+          const pages = (
+            msg.result.targetInfos as { targetId: string; type: string; url: string }[]
+          ).filter(
+            (t) => t.type === "page" && !t.url.startsWith("chrome://") && t.url !== "about:blank",
+          );
           const target = pages[pages.length - 1] || pages[0];
           if (!target) {
             clearTimeout(timeout);
@@ -1089,32 +1198,38 @@ async function handleScreenshotRequest(
             resolve();
             return;
           }
-          browserWs.send(JSON.stringify({
-            id: msgId++,
-            method: "Target.attachToTarget",
-            params: { targetId: target.targetId, flatten: true },
-          }));
+          browserWs.send(
+            JSON.stringify({
+              id: msgId++,
+              method: "Target.attachToTarget",
+              params: { targetId: target.targetId, flatten: true },
+            }),
+          );
         }
 
         if (msg.id === 2 && msg.result?.sessionId) {
           cdpSessionId = msg.result.sessionId;
-          browserWs.send(JSON.stringify({
-            id: msgId++,
-            method: "Page.captureScreenshot",
-            sessionId: cdpSessionId,
-            params: { format, quality },
-          }));
+          browserWs.send(
+            JSON.stringify({
+              id: msgId++,
+              method: "Page.captureScreenshot",
+              sessionId: cdpSessionId,
+              params: { format, quality },
+            }),
+          );
         }
 
         if (msg.id === 3) {
           const data = msg.result?.data || null;
           send({ type: "screenshotResponse", requestId, data });
           if (cdpSessionId) {
-            browserWs.send(JSON.stringify({
-              id: msgId++,
-              method: "Target.detachFromTarget",
-              params: { sessionId: cdpSessionId },
-            }));
+            browserWs.send(
+              JSON.stringify({
+                id: msgId++,
+                method: "Target.detachFromTarget",
+                params: { sessionId: cdpSessionId },
+              }),
+            );
           }
           clearTimeout(timeout);
           browserWs.close();
@@ -1154,12 +1269,13 @@ async function captureViaX11(requestId: string, format: string): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       // -z: no compression for png (slightly faster); -q: jpeg quality
       // (ignored for png). --silent: don't beep / print to stdout.
-      const args = format === "jpeg"
-        ? ["--silent", "-q", "85", outPath]
-        : ["--silent", "-z", outPath];
+      const args =
+        format === "jpeg" ? ["--silent", "-q", "85", outPath] : ["--silent", "-z", outPath];
       const proc = spawn("scrot", args, { stdio: ["ignore", "ignore", "pipe"] });
       let stderr = "";
-      proc.stderr?.on("data", (d) => { stderr += d.toString(); });
+      proc.stderr?.on("data", (d) => {
+        stderr += d.toString();
+      });
       proc.on("error", reject);
       proc.on("close", (code) => {
         if (code === 0) resolve();
@@ -1213,7 +1329,10 @@ async function getRawInputCdpWs(): Promise<WebSocket> {
 
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(webSocketDebuggerUrl);
-    const timeout = setTimeout(() => { ws.close(); reject(new Error("CDP connect timeout")); }, 5_000);
+    const timeout = setTimeout(() => {
+      ws.close();
+      reject(new Error("CDP connect timeout"));
+    }, 5_000);
     ws.on("open", () => {
       clearTimeout(timeout);
       rawInputCdpWs = ws;
@@ -1221,7 +1340,10 @@ async function getRawInputCdpWs(): Promise<WebSocket> {
       resetRawInputIdleTimer();
       resolve(ws);
     });
-    ws.on("error", (err) => { clearTimeout(timeout); reject(err); });
+    ws.on("error", (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
     ws.on("close", () => {
       if (rawInputCdpWs === ws) rawInputCdpWs = null;
     });
@@ -1229,17 +1351,22 @@ async function getRawInputCdpWs(): Promise<WebSocket> {
 }
 
 function sendCdpInput(method: string, params: Record<string, unknown>) {
-  getRawInputCdpWs().then((ws) => {
-    ws.send(JSON.stringify({ id: rawInputMsgId++, method, params }));
-  }).catch((err) => {
-    log(`ERROR: sendCdpInput(${method}) failed: ${err instanceof Error ? err.message : String(err)}`);
-  });
+  getRawInputCdpWs()
+    .then((ws) => {
+      ws.send(JSON.stringify({ id: rawInputMsgId++, method, params }));
+    })
+    .catch((err) => {
+      log(
+        `ERROR: sendCdpInput(${method}) failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
 }
 
 const CDP_BUTTON_MAP: Record<string, string> = { left: "left", right: "right", middle: "middle" };
 
 async function handleRawMouseEvent(msg: {
-  x: number; y: number;
+  x: number;
+  y: number;
   eventType: "mousePressed" | "mouseReleased" | "mouseMoved";
   button?: "left" | "right" | "middle";
   clickCount?: number;
@@ -1253,16 +1380,26 @@ async function handleRawMouseEvent(msg: {
 }
 
 async function handleRawScrollEvent(msg: {
-  x: number; y: number; deltaX: number; deltaY: number;
+  x: number;
+  y: number;
+  deltaX: number;
+  deltaY: number;
 }): Promise<void> {
   sendCdpInput("Input.dispatchMouseEvent", {
-    type: "mouseWheel", x: msg.x, y: msg.y, deltaX: msg.deltaX, deltaY: msg.deltaY,
+    type: "mouseWheel",
+    x: msg.x,
+    y: msg.y,
+    deltaX: msg.deltaX,
+    deltaY: msg.deltaY,
   });
 }
 
 async function handleRawKeyEvent(msg: {
-  eventType: "keyDown" | "keyUp"; key: string; code: string;
-  text?: string; modifiers?: number;
+  eventType: "keyDown" | "keyUp";
+  key: string;
+  code: string;
+  text?: string;
+  modifiers?: number;
 }): Promise<void> {
   const params: Record<string, unknown> = { type: msg.eventType, key: msg.key, code: msg.code };
   if (msg.text) params.text = msg.text;
@@ -1281,10 +1418,7 @@ async function handleRawKeyEvent(msg: {
  * existing CDP bridge or page sessions, so the running scrape is
  * unaffected.
  */
-async function handleOpenPage(
-  requestId: string,
-  url: string,
-): Promise<void> {
+async function handleOpenPage(requestId: string, url: string): Promise<void> {
   try {
     // Fetch /json/version directly — the cached `cdpWsUrl` is only
     // populated after a startSession, but this entrypoint must also
@@ -1304,11 +1438,13 @@ async function handleOpenPage(
         // newWindow=false → opens in the existing browser window as a
         // new tab. background=false → activates the new tab so the user
         // lands on it after VNC-connecting.
-        ws.send(JSON.stringify({
-          id: 1,
-          method: "Target.createTarget",
-          params: { url, newWindow: false, background: false },
-        }));
+        ws.send(
+          JSON.stringify({
+            id: 1,
+            method: "Target.createTarget",
+            params: { url, newWindow: false, background: false },
+          }),
+        );
       });
 
       ws.on("message", (raw) => {
@@ -1349,7 +1485,10 @@ async function handleScrollRevealLazyContent(
   noChangeLimit: number,
 ): Promise<void> {
   await withDirectPageCdp("scrollRevealLazyContent", 60_000, async (pageWs, nextId) => {
-    const cdpCall = <T = Record<string, unknown>>(method: string, params: Record<string, unknown> = {}): Promise<T> => {
+    const cdpCall = <T = Record<string, unknown>>(
+      method: string,
+      params: Record<string, unknown> = {},
+    ): Promise<T> => {
       return new Promise((resolve, reject) => {
         const id = nextId();
         const timer = setTimeout(() => {
@@ -1367,7 +1506,9 @@ async function handleScrollRevealLazyContent(
               else resolve((msg.result || {}) as T);
             }
           } catch (err) {
-            log(`scrollReveal cdpCall parse error: ${err instanceof Error ? err.message : String(err)}`);
+            log(
+              `scrollReveal cdpCall parse error: ${err instanceof Error ? err.message : String(err)}`,
+            );
           }
         };
 
@@ -1389,19 +1530,23 @@ async function handleScrollRevealLazyContent(
       const mouseY = viewport.height * (0.3 + Math.random() * 0.3);
       const steps = 2 + Math.floor(Math.random() * 3);
 
-      pageWs.send(JSON.stringify({
-        id: nextId(),
-        method: "Input.dispatchMouseEvent",
-        params: { type: "mouseMoved", x: mouseX, y: mouseY },
-      }));
+      pageWs.send(
+        JSON.stringify({
+          id: nextId(),
+          method: "Input.dispatchMouseEvent",
+          params: { type: "mouseMoved", x: mouseX, y: mouseY },
+        }),
+      );
 
       for (let i = 0; i < steps; i++) {
         const deltaY = 500 + (Math.random() - 0.5) * 400;
-        pageWs.send(JSON.stringify({
-          id: nextId(),
-          method: "Input.dispatchMouseEvent",
-          params: { type: "mouseWheel", x: mouseX, y: mouseY, deltaX: 0, deltaY },
-        }));
+        pageWs.send(
+          JSON.stringify({
+            id: nextId(),
+            method: "Input.dispatchMouseEvent",
+            params: { type: "mouseWheel", x: mouseX, y: mouseY, deltaX: 0, deltaY },
+          }),
+        );
         const delayMs = 80 + Math.random() * 60;
         await new Promise((r) => setTimeout(r, delayMs));
       }
@@ -1447,7 +1592,10 @@ async function handleScrollRevealLazyContent(
 /**
  * Fetch Chrome's /json/version — wait for Chrome to be ready.
  */
-async function fetchCdpVersion(maxRetries = 30, retryDelay = 500): Promise<Record<string, unknown>> {
+async function fetchCdpVersion(
+  maxRetries = 30,
+  retryDelay = 500,
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let attempts = 0;
     const attempt = () => {
@@ -1456,8 +1604,11 @@ async function fetchCdpVersion(maxRetries = 30, retryDelay = 500): Promise<Recor
         let data = "";
         res.on("data", (chunk) => (data += chunk));
         res.on("end", () => {
-          try { resolve(JSON.parse(data)); }
-          catch { reject(new Error(`Invalid JSON from Chrome /json/version`)); }
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            reject(new Error(`Invalid JSON from Chrome /json/version`));
+          }
         });
       });
       req.on("error", () => {
@@ -1527,7 +1678,12 @@ async function ensureChromeProfile(profileId?: number): Promise<void> {
   log(`WARNING: Chrome did not confirm profile switch to ${target} in time — proceeding anyway`);
 }
 
-async function handleStartSession(_config: { startUrl?: string; headed?: boolean; keepMinimized?: boolean; profileId?: number }): Promise<void> {
+async function handleStartSession(_config: {
+  startUrl?: string;
+  headed?: boolean;
+  keepMinimized?: boolean;
+  profileId?: number;
+}): Promise<void> {
   try {
     log("Status: scraping");
     lastCursorPos = null;
@@ -1567,7 +1723,9 @@ async function handleStartSession(_config: { startUrl?: string; headed?: boolean
       },
     });
 
-    log(`Session started, CDP bridge active (${(versionInfo as { Browser?: string }).Browser || "unknown"})`);
+    log(
+      `Session started, CDP bridge active (${(versionInfo as { Browser?: string }).Browser || "unknown"})`,
+    );
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     log(`ERROR: Failed to start session: ${error}`);
@@ -1582,18 +1740,26 @@ async function reloadAllPages(): Promise<void> {
   if (!match) return;
   const port = match[1];
 
-  const targets: { id: string; type: string; webSocketDebuggerUrl?: string }[] = await new Promise((resolve, reject) => {
-    const req = http.get(`http://127.0.0.1:${port}/json`, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => {
-        try { resolve(JSON.parse(data)); }
-        catch { reject(new Error("Invalid JSON from /json")); }
+  const targets: { id: string; type: string; webSocketDebuggerUrl?: string }[] = await new Promise(
+    (resolve, reject) => {
+      const req = http.get(`http://127.0.0.1:${port}/json`, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch {
+            reject(new Error("Invalid JSON from /json"));
+          }
+        });
       });
-    });
-    req.on("error", reject);
-    req.setTimeout(3000, () => { req.destroy(); reject(new Error("Timeout")); });
-  });
+      req.on("error", reject);
+      req.setTimeout(3000, () => {
+        req.destroy();
+        reject(new Error("Timeout"));
+      });
+    },
+  );
 
   const pages = targets.filter((t) => t.type === "page" && t.webSocketDebuggerUrl);
   log(`Reloading ${pages.length} page(s) after CDP release`);
@@ -1602,12 +1768,22 @@ async function reloadAllPages(): Promise<void> {
     try {
       const pageWs = new WebSocket(page.webSocketDebuggerUrl!);
       await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => { pageWs.close(); reject(new Error("Timeout")); }, 3000);
+        const timeout = setTimeout(() => {
+          pageWs.close();
+          reject(new Error("Timeout"));
+        }, 3000);
         pageWs.on("open", () => {
           pageWs.send(JSON.stringify({ id: 1, method: "Page.reload" }));
-          setTimeout(() => { clearTimeout(timeout); pageWs.close(); resolve(); }, 200);
+          setTimeout(() => {
+            clearTimeout(timeout);
+            pageWs.close();
+            resolve();
+          }, 200);
         });
-        pageWs.on("error", (err) => { clearTimeout(timeout); reject(err); });
+        pageWs.on("error", (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
       });
     } catch (err) {
       log(`Failed to reload page ${page.id}: ${err instanceof Error ? err.message : String(err)}`);
@@ -1634,7 +1810,9 @@ async function handleReleaseCdp(): Promise<void> {
     log("CDP bridge reconnected (fresh session)");
     await reloadAllPages();
   } catch (err) {
-    log(`ERROR: Failed to reconnect CDP bridge: ${err instanceof Error ? err.message : String(err)}`);
+    log(
+      `ERROR: Failed to reconnect CDP bridge: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
@@ -1682,7 +1860,9 @@ function handleMessage(msg: ServerMessage): void {
 
   switch (msg.type) {
     case "startSession":
-      log(`  Config: headed=${msg.config.headed ?? true}, startUrl=${msg.config.startUrl || "(none)"}, profileId=${msg.config.profileId ?? "(none)"}`);
+      log(
+        `  Config: headed=${msg.config.headed ?? true}, startUrl=${msg.config.startUrl || "(none)"}, profileId=${msg.config.profileId ?? "(none)"}`,
+      );
       handleStartSession(msg.config);
       break;
 
@@ -1700,7 +1880,9 @@ function handleMessage(msg: ServerMessage): void {
       break;
 
     case "typeText":
-      withStep(msg.stepId, () => withInputGate(() => handleTypeText(msg.text, msg.charDelayMs, msg.submitAfter ?? false))).catch((err) => {
+      withStep(msg.stepId, () =>
+        withInputGate(() => handleTypeText(msg.text, msg.charDelayMs, msg.submitAfter ?? false)),
+      ).catch((err) => {
         log(`ERROR: typeText failed: ${err instanceof Error ? err.message : String(err)}`);
       });
       break;
@@ -1712,7 +1894,9 @@ function handleMessage(msg: ServerMessage): void {
       break;
 
     case "scrollWheel":
-      withStep(msg.stepId, () => withInputGate(() => handleScrollWheel(msg.mouseX, msg.mouseY, msg.steps))).catch((err) => {
+      withStep(msg.stepId, () =>
+        withInputGate(() => handleScrollWheel(msg.mouseX, msg.mouseY, msg.steps)),
+      ).catch((err) => {
         log(`ERROR: scrollWheel failed: ${err instanceof Error ? err.message : String(err)}`);
       });
       break;
@@ -1739,7 +1923,9 @@ function handleMessage(msg: ServerMessage): void {
 
     case "clickElement":
       withStep(msg.stepId, () =>
-        withInputGate(() => handleClickElement(msg.requestId, msg.selector, msg.timeout, msg.modifiers, msg.button)),
+        withInputGate(() =>
+          handleClickElement(msg.requestId, msg.selector, msg.timeout, msg.modifiers, msg.button),
+        ),
       ).catch((err) => {
         const error = err instanceof Error ? err.message : String(err);
         log(`ERROR: clickElement failed: ${error}`);
@@ -1749,7 +1935,9 @@ function handleMessage(msg: ServerMessage): void {
 
     case "clickAt":
       withStep(msg.stepId, () =>
-        withInputGate(() => handleClickAt(msg.requestId, msg.x, msg.y, msg.timeout, msg.modifiers, msg.button)),
+        withInputGate(() =>
+          handleClickAt(msg.requestId, msg.x, msg.y, msg.timeout, msg.modifiers, msg.button),
+        ),
       ).catch((err) => {
         const error = err instanceof Error ? err.message : String(err);
         log(`ERROR: clickAt failed: ${error}`);
@@ -1759,11 +1947,25 @@ function handleMessage(msg: ServerMessage): void {
 
     case "scrollRevealLazyContent":
       withStep(msg.stepId, () =>
-        withInputGate(() => handleScrollRevealLazyContent(msg.requestId, msg.viewport, msg.maxRounds, msg.noChangeLimit)),
+        withInputGate(() =>
+          handleScrollRevealLazyContent(
+            msg.requestId,
+            msg.viewport,
+            msg.maxRounds,
+            msg.noChangeLimit,
+          ),
+        ),
       ).catch((err) => {
         const error = err instanceof Error ? err.message : String(err);
         log(`ERROR: scrollRevealLazyContent failed: ${error}`);
-        send({ type: "scrollRevealLazyContentResponse", requestId: msg.requestId, success: false, totalScrollSteps: 0, finalHeight: 0, error });
+        send({
+          type: "scrollRevealLazyContentResponse",
+          requestId: msg.requestId,
+          success: false,
+          totalScrollSteps: 0,
+          finalHeight: 0,
+          error,
+        });
       });
       break;
 
@@ -1771,7 +1973,9 @@ function handleMessage(msg: ServerMessage): void {
       // Server is opening a scrape — switch on debug forwarding if it asked
       // for verbose logs; otherwise we still forward info+ levels by default.
       logForwardingVerbose = !!msg.verbose;
-      log(`Log forwarding: ${logForwardingVerbose ? "verbose (debug+)" : "info+"} (run ${msg.runId ?? "(none)"})`);
+      log(
+        `Log forwarding: ${logForwardingVerbose ? "verbose (debug+)" : "info+"} (run ${msg.runId ?? "(none)"})`,
+      );
       break;
 
     case "setMinimized":

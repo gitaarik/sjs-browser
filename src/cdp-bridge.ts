@@ -46,7 +46,7 @@ export function createCdpBridge(options: CdpBridgeOptions): Promise<CdpBridge> {
         if (serverToChrome > 0 || chromeToServer > 0) {
           console.log(
             `[CDP Bridge] Traffic: server→chrome ${serverToChrome} msgs (${fmtBytes(serverToChromeBytes)}), ` +
-            `chrome→server ${chromeToServer} msgs (${fmtBytes(chromeToServerBytes)})`,
+              `chrome→server ${chromeToServer} msgs (${fmtBytes(chromeToServerBytes)})`,
           );
           serverToChrome = 0;
           chromeToServer = 0;
@@ -104,7 +104,9 @@ export function createCdpBridge(options: CdpBridgeOptions): Promise<CdpBridge> {
                 };
                 cdpData = JSON.stringify(cdp);
               }
-            } catch { /* not JSON or no method — relay as-is */ }
+            } catch {
+              /* not JSON or no method — relay as-is */
+            }
 
             chromeWs.send(cdpData);
             serverToChrome++;
@@ -116,7 +118,9 @@ export function createCdpBridge(options: CdpBridgeOptions): Promise<CdpBridge> {
             serverToChromeBytes += buf.length;
           }
         } catch (err) {
-          console.log(`[CDP Bridge] Tunnel message parse error: ${err instanceof Error ? err.message : String(err)}`);
+          console.log(
+            `[CDP Bridge] Tunnel message parse error: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       };
       tunnelWs.on("message", tunnelHandler);
@@ -160,12 +164,16 @@ export function createCdpBridge(options: CdpBridgeOptions): Promise<CdpBridge> {
                     sessionId,
                   });
                   chromeWs.send(resumeMsg);
-                  console.log(`[CDP Bridge] Auto-resumed unhandled target (session ${sessionId.slice(0, 8)}...)`);
+                  console.log(
+                    `[CDP Bridge] Auto-resumed unhandled target (session ${sessionId.slice(0, 8)}...)`,
+                  );
                 }
               }, 500);
               pendingTargets.set(sessionId, timer);
             }
-          } catch { /* not JSON — just relay */ }
+          } catch {
+            /* not JSON — just relay */
+          }
         }
 
         if (isBinary) {

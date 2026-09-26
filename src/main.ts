@@ -52,7 +52,10 @@ const imageBuildDate = process.env.SJS_BROWSER_BUILD_DATE ?? "unknown";
 function readAppBuildInfo(): { version: string; build_date: string } {
   try {
     const info = JSON.parse(readFileSync(".build-info.json", "utf-8"));
-    return { version: String(info.version ?? "unknown"), build_date: String(info.build_date ?? "unknown") };
+    return {
+      version: String(info.version ?? "unknown"),
+      build_date: String(info.build_date ?? "unknown"),
+    };
   } catch {
     return { version: imageVersion, build_date: imageBuildDate };
   }
@@ -88,11 +91,12 @@ if (watchdogChannel !== "disabled" && buildVersion !== "unknown") {
   //   v*.*.* → /releases/tags/<tag>  (pinned tag)
   // The first two return a single release object; /releases returns an
   // array, so we unwrap it.
-  const endpoint = watchdogChannel === "stable"
-    ? `https://api.github.com/repos/${watchdogRepo}/releases/latest`
-    : watchdogChannel === "beta"
-    ? `https://api.github.com/repos/${watchdogRepo}/releases?per_page=1`
-    : `https://api.github.com/repos/${watchdogRepo}/releases/tags/${watchdogChannel}`;
+  const endpoint =
+    watchdogChannel === "stable"
+      ? `https://api.github.com/repos/${watchdogRepo}/releases/latest`
+      : watchdogChannel === "beta"
+        ? `https://api.github.com/repos/${watchdogRepo}/releases?per_page=1`
+        : `https://api.github.com/repos/${watchdogRepo}/releases/tags/${watchdogChannel}`;
 
   const timer = setInterval(async () => {
     try {
@@ -101,9 +105,7 @@ if (watchdogChannel !== "disabled" && buildVersion !== "unknown") {
         signal: AbortSignal.timeout(20_000),
       });
       if (!r.ok) return;
-      const raw = await r.json() as
-        | { tag_name?: string }
-        | Array<{ tag_name?: string }>;
+      const raw = (await r.json()) as { tag_name?: string } | Array<{ tag_name?: string }>;
       const latest = Array.isArray(raw) ? raw[0] : raw;
       const latestVersion = (latest?.tag_name ?? "").replace(/^v/, "");
       if (latestVersion && latestVersion !== buildVersion) {

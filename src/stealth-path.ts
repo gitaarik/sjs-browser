@@ -22,7 +22,10 @@ export interface BezierPoint {
  * fades near the target. Returns per-step points with inter-step delays.
  */
 export function computeBezierPath(
-  fromX: number, fromY: number, toX: number, toY: number,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
 ): BezierPoint[] {
   const steps = 15 + Math.floor(Math.random() * 15);
   const dx = toX - fromX;
@@ -52,9 +55,8 @@ export function computeBezierPath(
       y += (Math.random() - 0.5) * tremorAmount;
     }
 
-    const delayMs = i < steps
-      ? Math.round((4 + Math.random() * 6) * (1 - 0.6 * Math.sin(linear * Math.PI)))
-      : 0;
+    const delayMs =
+      i < steps ? Math.round((4 + Math.random() * 6) * (1 - 0.6 * Math.sin(linear * Math.PI))) : 0;
 
     points.push({ x, y, delayMs });
   }
