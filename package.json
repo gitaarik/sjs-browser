@@ -4,6 +4,11 @@
   "description": "sjs-browser — Smart Job Seeker browser channel client for NAS/home server deployment",
   "private": true,
   "type": "module",
+  "scripts": {
+    "lint": "npx --yes oxlint@1.85.0 --deny-warnings",
+    "format": "npx --yes prettier@3.9.9 --write \"**/*.{ts,js,mjs,cjs}\"",
+    "format:check": "npx --yes prettier@3.9.9 --check \"**/*.{ts,js,mjs,cjs}\""
+  },
   "dependencies": {
     "ws": "^8.21.3"
   },

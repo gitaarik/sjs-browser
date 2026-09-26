@@ -40,7 +40,6 @@ const SUPPORTED_HANDLERS = [
   "clientLog",
 ];
 const CDP_PORT = 9222;
-const CDP_WS_BASE = `ws://127.0.0.1:${CDP_PORT}`;
 
 // Per-credential Chrome profiles. Chrome's user-data dir is owned by the
 // supervisor loop in chrome-common.sh, not by this runtime. We request a
@@ -213,50 +212,6 @@ async function fetchPageTarget(): Promise<{ pageId: string; webSocketDebuggerUrl
   return { pageId: page.id, webSocketDebuggerUrl: page.webSocketDebuggerUrl, url: page.url };
 }
 
-
-/**
- * Send CDP commands on a short-lived browser-level WebSocket.
- */
-async function cdpBrowserCall(
-  pageId: string,
-  messages: { method: string; params?: Record<string, unknown> }[],
-): Promise<unknown> {
-  if (!cdpWsUrl) throw new Error("No CDP WebSocket URL");
-  return new Promise((resolve, reject) => {
-    const cdpWs = new WebSocket(cdpWsUrl!);
-    const timeout = setTimeout(() => { cdpWs.close(); reject(new Error("Timeout")); }, 3000);
-    let step = 0;
-
-    cdpWs.on("open", () => {
-      cdpWs.send(JSON.stringify({ id: 1, ...messages[0], params: { targetId: pageId, ...messages[0].params } }));
-    });
-
-    cdpWs.on("message", (data) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        if (msg.id !== step + 1) return;
-        if (msg.error) {
-          clearTimeout(timeout); cdpWs.close();
-          reject(new Error(`${messages[step].method}: ${msg.error.message}`));
-          return;
-        }
-        step++;
-        if (step >= messages.length) {
-          clearTimeout(timeout); cdpWs.close();
-          resolve(msg.result);
-        } else {
-          const params = { ...messages[step].params };
-          if (msg.result?.windowId !== undefined) params.windowId = msg.result.windowId;
-          cdpWs.send(JSON.stringify({ id: step + 1, method: messages[step].method, params }));
-        }
-      } catch (err) {
-        log(`cdpBrowserCall: JSON parse error: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    });
-
-    cdpWs.on("error", (err) => { clearTimeout(timeout); reject(err); });
-  });
-}
 
 type DirectPageCdpAttempt =
   | { ok: true }
@@ -727,7 +682,7 @@ async function handleClickElement(
   // Snapshot page targets before click to detect new tabs
   let targetsBefore: string[] = [];
   try {
-    const targets: { id: string; type: string }[] = await new Promise((resolve, reject) => {
+    const targets: { id: string; type: string }[] = await new Promise((resolve) => {
       const req = http.get(`http://127.0.0.1:${CDP_PORT}/json`, (res) => {
         let data = "";
         res.on("data", (chunk: string) => (data += chunk));
@@ -974,7 +929,7 @@ async function handleClickElement(
   if (targetsBefore.length > 0) {
     await new Promise((r) => setTimeout(r, 300));
     try {
-      const targets: { id: string; type: string }[] = await new Promise((resolve, reject) => {
+      const targets: { id: string; type: string }[] = await new Promise((resolve) => {
         const req = http.get(`http://127.0.0.1:${CDP_PORT}/json`, (res) => {
           let data = "";
           res.on("data", (chunk: string) => (data += chunk));
