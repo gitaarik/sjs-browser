@@ -27,6 +27,7 @@ SESSION_DIR="/data/sessions/chrome-user-data"
 SOCAT_BIND_ADDR="127.0.0.1"
 
 # Start Chrome + VNC + socat (shared logic)
+# shellcheck source=chrome-common.sh
 source /chrome-common.sh
 
 echo "============================================"

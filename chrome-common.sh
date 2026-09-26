@@ -65,7 +65,8 @@ cleanup_locks() {
 # --- Pick a consistent viewport size seeded by session dir ---
 get_viewport() {
   local sizes=("1920,1080" "1536,864" "1440,900" "1366,768" "1600,900" "1680,1050" "1280,800" "1280,720")
-  local hash=$(echo -n "$SESSION_DIR" | md5sum | cut -c1-8)
+  local hash
+  hash=$(echo -n "$SESSION_DIR" | md5sum | cut -c1-8)
   local index=$(( 16#$hash % ${#sizes[@]} ))
   echo "${sizes[$index]}"
 }
@@ -117,6 +118,7 @@ x11vnc -display :99 \
   -shared \
   -noxdamage \
   2>/dev/null &
+# shellcheck disable=SC2034 # exported to the sourcing entrypoint (see the header)
 VNC_PID=$!
 sleep 1
 echo "[VNC] Started on port $VNC_PORT"
@@ -149,7 +151,7 @@ CHROME_ARGS=(
   --disable-features=CalculateNativeWinOcclusion
   # Window size
   --window-size="$VIEWPORT"
-  --window-position=0,0
+  "--window-position=0,0" # one flag, x,y
   # Disable session restore and crash prompts
   --disable-session-crashed-bubble
   --hide-crash-restore-bubble
@@ -230,7 +232,7 @@ CHROME_PID=$!
 echo "[Chrome] Supervisor started (PID $CHROME_PID), waiting for CDP on port $INTERNAL_CDP_PORT..."
 
 # Wait for CDP to be ready
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   if curl -sf "http://127.0.0.1:$INTERNAL_CDP_PORT/json/version" > /dev/null 2>&1; then
     echo "[Chrome] CDP ready on internal port $INTERNAL_CDP_PORT"
     break

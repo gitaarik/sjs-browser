@@ -24,6 +24,21 @@ jobs:
       - run: pip install --quiet yamllint==1.37.1
       - run: yamllint .
 
+      # Every tracked shell script: *.sh, and extensionless files with a sh or
+      # bash shebang (the git hooks). .shellcheckrc lets it follow `source`.
+      # Clean at shellcheck's default severity since 2026-09-26: notes fail too.
+      - name: shellcheck
+        run: |
+          pip install --quiet shellcheck-py==0.11.0.1
+          re='^#!.*[/ ](ba|da)?sh( |$)'
+          git ls-files -z | while IFS= read -r -d '' f; do
+            [ -f "$f" ] || continue
+            if [[ $f == *.sh ]]; then printf '%s\0' "$f"; continue; fi
+            first=''
+            IFS= read -r first < "$f" || true
+            if [[ $first =~ $re ]]; then printf '%s\0' "$f"; fi
+          done | xargs -0 --no-run-if-empty shellcheck
+
   lint-git:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04

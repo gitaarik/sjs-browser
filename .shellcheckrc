@@ -1,0 +1,4 @@
+# Follow `source` to the file it names, looked up next to the sourcing script:
+# a variable set for the sourced file is then seen as used.
+source-path=SCRIPTDIR
+external-sources=true
