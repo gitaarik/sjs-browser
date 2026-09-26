@@ -39,6 +39,14 @@ jobs:
             if [[ $first =~ $re ]]; then printf '%s\0' "$f"; fi
           done | xargs -0 --no-run-if-empty shellcheck
 
+      # The workflows themselves: expressions, action inputs, runner labels,
+      # and every run: block through shellcheck, which the step above put on
+      # PATH. Clean since 2026-09-26.
+      - name: actionlint
+        run: |
+          pip install --quiet actionlint-py==1.7.12.25
+          actionlint
+
   lint-git:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
