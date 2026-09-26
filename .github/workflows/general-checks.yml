@@ -93,7 +93,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - uses: hadolint/hadolint-action@v3.4.0
+      - uses: hadolint/hadolint-action@v3.5.0
         with:
           recursive: true
           # Warnings fail too, since 2026-09-24, when the last ones were fixed:
