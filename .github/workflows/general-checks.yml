@@ -17,8 +17,8 @@ jobs:
   yamllint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.x'
       - run: pip install --quiet yamllint==1.37.1
@@ -47,11 +47,22 @@ jobs:
           pip install --quiet actionlint-py==1.7.12.25
           actionlint
 
+      # Workflow security: every action pinned to a commit (Dependabot keeps
+      # the pins current), no token broader than its job needs, no expression
+      # spliced into a script. Offline, so it reads only these files. What
+      # zizmor itself rates low-confidence is left out: checkout keeping its
+      # token in .git/config, and the caches in release builds. Clean since
+      # 2026-09-27.
+      - name: zizmor
+        run: |
+          pip install --quiet zizmor==1.30.1
+          zizmor --offline --min-confidence medium .github/workflows
+
   lint-git:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
@@ -92,8 +103,8 @@ jobs:
   hadolint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: hadolint/hadolint-action@v3.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387  # v3.5.0
         with:
           recursive: true
           # Warnings fail too, since 2026-09-24, when the last ones were fixed:
@@ -109,9 +120,9 @@ jobs:
   dockle:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Build image for scanning
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           file: ./Dockerfile
@@ -120,7 +131,7 @@ jobs:
           # Tag is required but doesn't matter since we're not pushing.
           tags: sjs-browser-scan:ci
       - name: Run Dockle
-        uses: goodwithtech/dockle-action@v0.4.15
+        uses: goodwithtech/dockle-action@e30e6af832aad6ea7dca2a248d31a85eab6dbd68  # v0.4.15
         with:
           image: 'sjs-browser-scan:ci'
           format: 'list'
