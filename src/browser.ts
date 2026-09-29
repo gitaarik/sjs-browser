@@ -169,6 +169,36 @@ function withInputGate<T>(fn: () => Promise<T>): Promise<T> {
   });
 }
 
+/**
+ * Serializes lifecycle operations (startSession / stopSession / releaseCdp)
+ * onto a single promise chain so they can't interleave.
+ *
+ * At the end of a run the cloud sends `releaseCdp` immediately followed by
+ * `stopSession`. Fired concurrently, `stopSession` ran while
+ * `handleReleaseCdp` was still waiting for its fresh bridge and found nothing
+ * to close; the bridge then opened after the session had stopped, reloaded
+ * every page, and stayed attached to the tunnel until the next
+ * `startSession`. The desktop client has serialized these since run 688.
+ *
+ * Errors thrown by enqueued tasks are caught here so one bad handler
+ * doesn't break the chain for everything queued after it.
+ */
+let lifecycleQueue: Promise<void> = Promise.resolve();
+
+/**
+ * Set the instant `stopSession` is enqueued, cleared when it actually
+ * begins executing. Lets earlier-queued handlers (specifically
+ * `handleReleaseCdp`) skip work that's about to be undone.
+ */
+let pendingStopSession = false;
+
+function enqueueLifecycle(label: string, fn: () => Promise<void>): void {
+  if (label === "stopSession") pendingStopSession = true;
+  lifecycleQueue = lifecycleQueue.then(fn).catch((err) => {
+    log(`lifecycle error in ${label}: ${err instanceof Error ? err.message : String(err)}`);
+  });
+}
+
 function send(msg: ClientMessage): void {
   if (msg.type !== "cdp" && msg.type !== "cdpBinary" && msg.type !== "pong") {
     logTrace(
@@ -1794,6 +1824,16 @@ async function reloadAllPages(): Promise<void> {
 async function handleReleaseCdp(): Promise<void> {
   if (!currentCdpBridge || !cdpWsUrl || !conn?.isOpen) return;
 
+  // A stopSession queued behind us would tear the fresh bridge down again
+  // within milliseconds, so skip the reconnect and the page reload. Still
+  // close the bridge, so stopSession finds no stale handle to close.
+  if (pendingStopSession) {
+    log("releaseCdp: stopSession queued, short-circuiting (closing bridge only)");
+    currentCdpBridge.close();
+    currentCdpBridge = null;
+    return;
+  }
+
   log("Releasing CDP bridge (resetting session state)...");
   currentCdpBridge.close();
   currentCdpBridge = null;
@@ -1808,6 +1848,12 @@ async function handleReleaseCdp(): Promise<void> {
       onNewTarget: () => {},
     });
     log("CDP bridge reconnected (fresh session)");
+    // Same check for a stopSession that arrived during the reconnect: it
+    // closes this bridge next, so reloading every page first is wasted.
+    if (pendingStopSession) {
+      log("releaseCdp: stopSession queued during reconnect, skipping page reload");
+      return;
+    }
     await reloadAllPages();
   } catch (err) {
     log(
@@ -1836,6 +1882,9 @@ async function handleCdpVersionRequest(): Promise<void> {
 }
 
 function stopSession(): void {
+  // Once a stop is actually running, a releaseCdp queued behind it must not
+  // short-circuit on its account.
+  pendingStopSession = false;
   if (currentCdpBridge) {
     log("Closing CDP bridge...");
     currentCdpBridge.close();
@@ -1863,16 +1912,18 @@ function handleMessage(msg: ServerMessage): void {
       log(
         `  Config: headed=${msg.config.headed ?? true}, startUrl=${msg.config.startUrl || "(none)"}, profileId=${msg.config.profileId ?? "(none)"}`,
       );
-      handleStartSession(msg.config);
+      enqueueLifecycle("startSession", () => handleStartSession(msg.config));
       break;
 
     case "stopSession":
-      stopSession();
-      log("Status: connected");
+      enqueueLifecycle("stopSession", async () => {
+        stopSession();
+        log("Status: connected");
+      });
       break;
 
     case "releaseCdp":
-      handleReleaseCdp();
+      enqueueLifecycle("releaseCdp", handleReleaseCdp);
       break;
 
     case "cdpVersionRequest":
