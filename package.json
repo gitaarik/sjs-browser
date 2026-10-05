@@ -10,12 +10,12 @@
     "format:check": "npx --yes prettier@3.9.9 --check \"**/*.{ts,js,mjs,cjs}\""
   },
   "dependencies": {
-    "ws": "^8.21.3"
+    "ws": "^8.22.0"
   },
   "devDependencies": {
-    "@types/ws": "^8.5.0",
-    "@types/node": "^26.4.1",
+    "@types/ws": "^8.18.2",
+    "@types/node": "^26.6.4",
     "typescript": "^7.0.2",
-    "tsx": "^4.23.13"
+    "tsx": "^4.23.15"
   }
 }
