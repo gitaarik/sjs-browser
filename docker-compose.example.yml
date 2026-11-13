@@ -20,10 +20,10 @@ services:
       - chrome_data:/data  # Persist Chrome profile (cookies, login sessions)
     environment:
       # Required: Your SJS server tunnel URL
-      SJS_SERVER_URL: "wss://app.smartjobseeker.com/tunnel"
+      SJS_SERVER_URL: "wss://www.smartjobseeker.com/tunnel"
 
-      # Required: API token from your SJS dashboard (Settings > Desktop App)
-      SJS_API_TOKEN: "your-api-token-here"
+      # Required: a device key (sjs_...), from Job Import > My Devices > New Key
+      SJS_API_TOKEN: "sjs_your_device_key_here"
 
       # Optional: Residential proxy URL
       # SJS_PROXY_URL: "http://user:pass@proxy.example.com:8080"

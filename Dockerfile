@@ -11,7 +11,7 @@
 #     tarball from gitaarik/sjs-browser, verifies it, and runs it
 #
 # Required env vars:
-#   SJS_SERVER_URL  — WebSocket tunnel URL (e.g., wss://app.smartjobseeker.com/tunnel)
+#   SJS_SERVER_URL  — WebSocket tunnel URL (e.g., wss://www.smartjobseeker.com/tunnel)
 #   SJS_API_TOKEN   — API token from the SJS dashboard
 #
 # Optional env vars:

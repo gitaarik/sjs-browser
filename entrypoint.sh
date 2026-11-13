@@ -11,7 +11,7 @@ set -e
 
 # --- Validate required env vars ---
 if [ -z "$SJS_SERVER_URL" ]; then
-  echo "[FATAL] SJS_SERVER_URL is required (e.g., wss://app.smartjobseeker.com/tunnel)"
+  echo "[FATAL] SJS_SERVER_URL is required (e.g., wss://www.smartjobseeker.com/tunnel)"
   exit 1
 fi
 
